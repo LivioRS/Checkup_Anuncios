@@ -44,7 +44,7 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 022  | OAuth do Mercado Livre de verdade pro portal, app separado dos robôs (kanban "Do Anúncio ao Portal" f1c3) | P1 | M | 020, 021 | DONE |
 | 023  | Login de cliente com RLS de verdade, Supabase Auth em `/portal/*` (kanban "Do Anúncio ao Portal" f1c4) | P1 | L | 021, 022 | DONE |
 | 024  | Fila e worker assíncrono pra operações em lote (kanban "Do Anúncio ao Portal" f2c1) | P1 | M | 020 | DONE |
-| 025  | Estender o lote pra título/descrição, só geração — gravação continua manual/revisada (kanban "Do Anúncio ao Portal" f2c2) | P1 | M | 024 | DONE (migração `lotes.tipo` pendente de aplicar — ver "Status do 025") |
+| 025  | Estender o lote pra título/descrição, só geração — gravação continua manual/revisada (kanban "Do Anúncio ao Portal" f2c2) | P1 | M | 024 | DONE |
 
 ## Dependency notes
 
@@ -325,7 +325,7 @@ própria ainda (fica pro f2c3); testar hoje é só via chamada HTTP direta.
 **Desvio do plano**: mesmo motivo dos planos 020-023 — sem `device_bash`, sem branch/commit/PR;
 arquivos enviados direto pra `E:\ShinCode\Trabalho\App\checkup-anuncio_1\checkup-anuncio`.
 
-## Status do 025 (2026-09-03, concluído — migração pendente de aplicar)
+## Status do 025 (2026-09-03, concluído)
 
 Implementado seguindo o "Desenho" do plano. Escopo confirmado como o desenho propõe: o lote
 **só gera** proposta de título/descrição (guardada em `lote_itens.resultado`); a gravação no ML
@@ -365,20 +365,18 @@ instalado de verdade):
   regressão do `POST`, motor, `tipo` na fila, e despacho do worker por tipo — inclusive o ramo
   `diagnostico` seguindo idêntico ao 024).
 
-**PENDENTE — aplicar a migração no banco real** (`vcxweutjmmycajnulkak`): a coluna `lotes.tipo`
-foi escrita em `supabase/schema.sql` mas **não** aplicada no projeto vivo — a ferramenta de
-migração do Supabase foi bloqueada pelo classificador de permissão nesta sessão (DDL em produção).
-Enquanto não for aplicada, `criarLote` (qualquer tipo, inclusive `diagnostico`) vai falhar contra
-o banco real porque insere a coluna `tipo`. SQL a rodar (aditivo, idempotente):
+**Migração aplicada no banco real** (`vcxweutjmmycajnulkak`, 2026-09-03): a ferramenta de
+migração do Supabase (`mcp__Supabase__apply_migration`) foi bloqueada pelo classificador de
+permissão desta sessão (DDL em produção), então o SQL abaixo foi entregue e rodado pelo Livio no
+SQL Editor do Supabase. Confirmado via `list_tables`: `public.lotes.tipo` — `text`, default
+`'diagnostico'`, check `in ('diagnostico','titulo','descricao')`. `lotes`/`lote_itens` (do 024)
+seguem com 0 linhas.
 
 ```sql
 alter table public.lotes add column if not exists tipo text not null default 'diagnostico';
 alter table public.lotes drop constraint if exists lotes_tipo_check;
 alter table public.lotes add constraint lotes_tipo_check check (tipo in ('diagnostico','titulo','descricao'));
 ```
-
-Confirmado ao vivo antes de parar: `lotes`/`lote_itens` existem no projeto real (criadas no 024),
-`lotes` ainda **sem** a coluna `tipo`, 0 linhas nas duas.
 
 **Não verificado nesta passada** (mesma natureza dos planos 022-024): chamar o worker de verdade
 contra a API do ML com `tipo: 'titulo'`/`'descricao'` — sem `ML_CLIENT_ID`/tokens neste ambiente.
