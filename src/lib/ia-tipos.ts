@@ -245,7 +245,7 @@ export function temBlocos(texto: string, blocos: { sobre?: string; garantia?: st
  * Uma linha "Origem: ..." / "País de origem: ..." / "Fabricado em: ..."
  */
 const LINHA_ORIGEM =
-  /^[ \t]*(origem|pa[ií]s de origem|pa[ií]s de fabrica[cç][aã]o|fabricado em|procedência|procedencia)[ \t]*[:\-][ \t]*\S+/im;
+  /^[ \t]*(origem|pa[ií]s de origem|pa[ií]s de fabrica[cç][aã]o|fabricado em|procedência|procedencia)[ \t]*[:-][ \t]*\S+/im;
 
 /** A descrição já informa a origem? */
 export function temOrigem(texto: string): boolean {

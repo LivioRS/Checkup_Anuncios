@@ -21,7 +21,6 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
 
   // Guarda o "antes" apenas dos atributos tocados, para o log.
   let antes: OutAttribute[] = [];
-  let categoryId: string | null = null;
   try {
     const atual = await getItem(id, { internos: true });
     const alvo = new Set(attributes.map((a) => a.id));
@@ -41,8 +40,8 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     await registrarEscrita({
       conta,
       itemId: id,
-      payload: attributes,
-      antes,
+      payload: { attributes },
+      antes: { attributes: antes },
       status: 200,
     });
 
@@ -54,8 +53,8 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     await registrarEscrita({
       conta,
       itemId: id,
-      payload: attributes,
-      antes: [],
+      payload: { attributes },
+      antes: { attributes: [] },
       status,
     });
 

@@ -54,6 +54,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   if (!pictureId) return NextResponse.json({ erro: 'picture_id ausente' }, { status: 400 });
 
   const { item, conta } = await abrirAnuncio(id);
+  if (!conta) {
+    return NextResponse.json(
+      { erro: 'Este anúncio não é de nenhuma conta cadastrada — o painel só lê.' },
+      { status: 403 },
+    );
+  }
 
   let origem: string | null = null;
 
@@ -76,7 +82,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     }
 
     // 1. baixa a maior versão disponível
-    origem = alvo.max_size ? alvo.secure_url ?? alvo.url : alvo.secure_url ?? alvo.url;
+    origem = (alvo.max_size ? alvo.secure_url ?? alvo.url : alvo.secure_url ?? alvo.url) ?? null;
     if (!origem) return NextResponse.json({ erro: 'foto sem URL' }, { status: 422 });
     // Teto de bytes antes de decodificar: evita OOM/estourar a janela de 60s
     // com imagem gigante ou decompression-bomb.

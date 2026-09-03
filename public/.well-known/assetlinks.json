@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "online.shinnishi.checkupanuncio",
+      "sha256_cert_fingerprints": [
+        "91:F8:10:A2:25:68:0C:EF:EA:F5:CC:00:9D:07:1C:FD:53:05:D2:F8:B5:84:31:64:77:87:2E:2F:03:31:BF:3C"
+      ]
+    }
+  }
+]
