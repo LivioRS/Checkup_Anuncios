@@ -20,7 +20,13 @@ function descreverErro(json: unknown): string {
 
 const campo = { marginTop: 12 } as const;
 
-export default function CriarAvulso({ contas }: { contas: Conta[] }) {
+export default function CriarAvulso({
+  contas,
+  onTrocarParaCatalogo,
+}: {
+  contas: Conta[];
+  onTrocarParaCatalogo?: (dados: { sellerId?: string; marca?: string; modelo?: string; codigo?: string }) => void;
+}) {
   const [sellerId, setSellerId] = useState(contas[0]?.seller_id ?? '');
   const [titulo, setTitulo] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -48,10 +54,19 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
   const [fichaGtin, setFichaGtin] = useState<{ id: string; nome: string; valor: string }[] | null>(null);
   const [fichaGtinMarcados, setFichaGtinMarcados] = useState<Record<string, boolean>>({});
   const [fichaGtinMsg, setFichaGtinMsg] = useState<string | null>(null);
+  const [fichaGtinProdutoId, setFichaGtinProdutoId] = useState<string | null>(null);
   const [tituloSugerido, setTituloSugerido] = useState<string | null>(null);
   const [fotoFichaUrl, setFotoFichaUrl] = useState('');
   const [fichaDaFoto, setFichaDaFoto] = useState<{ nome: string; valor: string }[] | null>(null);
   const [usouFoto, setUsouFoto] = useState(false);
+
+  // Plano 033 — rascunho por IA e ficha do site da marca.
+  const [preenchendoIa, setPreenchendoIa] = useState(false);
+  const [fichaWeb, setFichaWeb] = useState<{ nome: string; valor: string }[] | null>(null);
+  const [fichaWebFontes, setFichaWebFontes] = useState<string[]>([]);
+  const [fichaWebMsg, setFichaWebMsg] = useState<string | null>(null);
+  const [buscandoFichaWeb, setBuscandoFichaWeb] = useState(false);
+  const [preenchidoPorIa, setPreenchidoPorIa] = useState(false);
 
   const [criando, setCriando] = useState(false);
   const [resultado, setResultado] = useState<
@@ -154,6 +169,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
     setBuscandoFicha(true);
     setFichaGtinMsg(null);
     setFichaGtin(null);
+    setFichaGtinProdutoId(null);
     try {
       const p = new URLSearchParams({ gtin: cod, seller_id: sellerId });
       const res = await fetch(`/api/anuncios/ficha-por-gtin?${p}`);
@@ -169,6 +185,8 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
       const atrs = (json.atributos ?? []) as { id: string; nome: string; valor: string }[];
       setFichaGtin(atrs);
       setFichaGtinMarcados(Object.fromEntries(atrs.map((a) => [a.id, true])));
+      // Plano 033 — se o GTIN resolve pra um produto de catálogo, o modo "Do catálogo" traz tudo.
+      if (json.produto_id) setFichaGtinProdutoId(String(json.produto_id));
       if (!titulo.trim() && json.titulo_sugerido) setTituloSugerido(json.titulo_sugerido);
       if (!/^ML[A-Z]\d+$/.test(categoryId.trim()) && json.titulo_sugerido) {
         void sugerirCategoria(json.titulo_sugerido);
@@ -360,6 +378,31 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
           </div>
         </div>
         {fichaGtinMsg ? <small className="vazio">{fichaGtinMsg}</small> : null}
+        {fichaGtinProdutoId && onTrocarParaCatalogo ? (
+          <div className="card" style={{ marginTop: 8 }}>
+            <p style={{ margin: 0 }}>
+              <Selo nivel="atencao">catálogo</Selo> Este produto já tem página no catálogo do
+              Mercado Livre (<code>{fichaGtinProdutoId}</code>). O modo <strong>Do catálogo</strong>{' '}
+              traz título, <strong>fotos reais</strong> e ficha prontos — quase sem digitação.
+            </p>
+            <p style={{ margin: '8px 0 0' }}>
+              <button
+                type="button"
+                className="btn primary pequeno"
+                onClick={() =>
+                  onTrocarParaCatalogo({
+                    sellerId,
+                    marca: marca.trim() || undefined,
+                    modelo: modelo.trim() || undefined,
+                    codigo: gtin.trim() || undefined,
+                  })
+                }
+              >
+                Ir pro modo Do catálogo
+              </button>
+            </p>
+          </div>
+        ) : null}
         {fichaGtin && fichaGtin.length > 0 ? (
           <div className="card" style={{ marginTop: 8 }}>
             <small>

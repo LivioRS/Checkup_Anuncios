@@ -7,10 +7,22 @@ import CriarAvulso from './CriarAvulso';
 type Conta = { id: number; seller_id: string; apelido: string | null; org: string | null };
 
 type Modo = 'catalogo' | 'avulso';
+type Prefill = { sellerId?: string; marca?: string; modelo?: string; codigo?: string };
 
-/** Alterna entre criar anúncio do catálogo (plano 019) e fora do catálogo (plano 029). */
+/**
+ * Alterna entre criar anúncio do catálogo (plano 019) e fora do catálogo (plano 029).
+ * Plano 033: o "Fora do catálogo" pode empurrar o Livio pro "Do catálogo" quando o GTIN mostra
+ * que o produto já tem página no ML — levando marca/modelo/código junto.
+ */
 export default function CriarModos({ contas }: { contas: Conta[] }) {
   const [modo, setModo] = useState<Modo>('catalogo');
+  const [prefill, setPrefill] = useState<Prefill | null>(null);
+
+  function trocarParaCatalogo(dados: Prefill) {
+    setPrefill(dados);
+    setModo('catalogo');
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 
   return (
     <>
@@ -33,13 +45,24 @@ export default function CriarModos({ contas }: { contas: Conta[] }) {
         <button
           type="button"
           className={`btn${modo === 'avulso' ? ' primary' : ''}`}
-          onClick={() => setModo('avulso')}
+          onClick={() => {
+            setPrefill(null);
+            setModo('avulso');
+          }}
         >
           Fora do catálogo
         </button>
       </div>
 
-      {modo === 'catalogo' ? <CriarAnuncio contas={contas} /> : <CriarAvulso contas={contas} />}
+      {modo === 'catalogo' ? (
+        <CriarAnuncio
+          key={prefill ? `${prefill.marca}|${prefill.modelo}|${prefill.codigo}` : 'vazio'}
+          contas={contas}
+          prefill={prefill ?? undefined}
+        />
+      ) : (
+        <CriarAvulso contas={contas} onTrocarParaCatalogo={trocarParaCatalogo} />
+      )}
     </>
   );
 }
