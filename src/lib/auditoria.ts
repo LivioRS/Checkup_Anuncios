@@ -73,7 +73,8 @@ export async function registrarCriacaoAnuncio(params: {
   marca?: string | null;
   modelo?: string | null;
   codigo?: string | null;
-  catalogProductId: string;
+  /** String no fluxo de catálogo (plano 019); ausente no anúncio avulso (plano 029). */
+  catalogProductId?: string | null;
   payload: unknown;
   status: number;
   itemId?: string | null;
@@ -87,7 +88,7 @@ export async function registrarCriacaoAnuncio(params: {
         marca: params.marca ?? null,
         modelo: params.modelo ?? null,
         codigo: params.codigo ?? null,
-        catalog_product_id: params.catalogProductId,
+        catalog_product_id: params.catalogProductId ?? null,
         payload: params.payload,
         status: params.status,
         item_id: params.itemId ?? null,
