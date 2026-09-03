@@ -7,14 +7,35 @@ type Conta = { id: number; seller_id: string; apelido: string | null; org: strin
 
 type Sugestao = { category_id?: string; category_name?: string | null; domain_name?: string | null };
 
+type CausaMl = { code?: string; message?: string; references?: unknown[] };
+
+/** Uma linha legível por item de `cause` do ML: mensagem, ou `code` + os atributos referenciados. */
+function descreverCausa(c: CausaMl): string {
+  const msg = String(c?.message ?? '').trim();
+  if (msg) return msg;
+  const refs = Array.isArray(c?.references) ? c.references.map(String).filter(Boolean).join(', ') : '';
+  return [c?.code, refs && `(${refs})`].filter(Boolean).join(' ');
+}
+
 /** Lê o motivo real de uma resposta de erro das rotas — o detalhe do ML vem em `body`. */
 function descreverErro(json: unknown): string {
   try {
-    const j = json as { erro?: string; body?: { message?: string; cause?: { message?: string }[] } };
-    const causa = j?.body?.cause?.map((c) => c?.message).filter(Boolean).join('; ');
+    const j = json as { erro?: string; body?: { message?: string; cause?: CausaMl[] } };
+    const causa = (j?.body?.cause ?? []).map(descreverCausa).filter(Boolean).join('; ');
     return [j?.erro, j?.body?.message, causa].filter(Boolean).join(' — ') || 'Falhou sem explicar.';
   } catch {
     return 'Não consegui ler a resposta.';
+  }
+}
+
+/** JSON cru da resposta de erro, pra copiar/colar quando o ML manda um campo que não reconhecemos. */
+function detalheErro(json: unknown): string | undefined {
+  try {
+    const j = json as { body?: unknown };
+    if (j?.body == null) return undefined;
+    return JSON.stringify(j.body, null, 2);
+  } catch {
+    return undefined;
   }
 }
 
@@ -71,7 +92,7 @@ export default function CriarAvulso({
   const [criando, setCriando] = useState(false);
   const [resultado, setResultado] = useState<
     | { ok: true; id?: string; permalink?: string; erroDescricao?: unknown }
-    | { ok: false; msg: string }
+    | { ok: false; msg: string; detalhe?: string }
     | null
   >(null);
 
@@ -302,7 +323,7 @@ export default function CriarAvulso({
       });
       const json = await res.json();
       if (!res.ok || !json?.ok) {
-        setResultado({ ok: false, msg: descreverErro(json) });
+        setResultado({ ok: false, msg: descreverErro(json), detalhe: detalheErro(json) });
         return;
       }
       setResultado({
@@ -798,9 +819,28 @@ export default function CriarAvulso({
               ) : null}
             </>
           ) : (
-            <p style={{ margin: 0 }}>
-              <Selo nivel="critico">falhou</Selo> {resultado.msg}
-            </p>
+            <>
+              <p style={{ margin: 0 }}>
+                <Selo nivel="critico">falhou</Selo> {resultado.msg}
+              </p>
+              {resultado.detalhe ? (
+                <details style={{ margin: '8px 0 0' }}>
+                  <summary>Resposta crua do Mercado Livre (pra copiar)</summary>
+                  <pre
+                    style={{
+                      margin: '6px 0 0',
+                      padding: 8,
+                      overflow: 'auto',
+                      fontSize: 12,
+                      background: 'var(--fundo-sutil, #f4f4f5)',
+                      borderRadius: 6,
+                    }}
+                  >
+                    {resultado.detalhe}
+                  </pre>
+                </details>
+              ) : null}
+            </>
           )}
         </Secao>
       ) : null}
