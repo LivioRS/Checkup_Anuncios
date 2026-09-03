@@ -125,7 +125,12 @@ async function perguntarViaAnthropic(content: unknown, maxTokens: number): Promi
 }
 
 async function perguntarViaOpenRouter(content: unknown, maxTokens: number): Promise<string> {
-  const modelo = process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
+  const modelo = (process.env.OPENROUTER_MODEL ?? '').trim();
+  if (!modelo) {
+    throw new Error(
+      'OPENROUTER_MODEL não definido no .env.local — copie um slug de https://openrouter.ai/models que a sua conta acessa (filtre por ":free" se quiser custo zero).',
+    );
+  }
 
   const res = await fetch(OPENROUTER_API, {
     method: 'POST',
@@ -146,7 +151,11 @@ async function perguntarViaOpenRouter(content: unknown, maxTokens: number): Prom
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = json?.error?.message ?? JSON.stringify(json).slice(0, 300);
-    throw new Error(`OpenRouter ${res.status}: ${msg}`);
+    const dica =
+      res.status === 404 || /no endpoints found/i.test(String(msg))
+        ? ` — o modelo "${modelo}" não está disponível pra sua conta. Troque OPENROUTER_MODEL no .env.local (https://openrouter.ai/models).`
+        : '';
+    throw new Error(`OpenRouter ${res.status}: ${msg}${dica}`);
   }
 
   const conteudo = json?.choices?.[0]?.message?.content;
