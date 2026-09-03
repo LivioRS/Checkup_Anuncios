@@ -9,3 +9,6 @@ next-env.d.ts
 
 # scratch da skill impeccable (design.json / hook.cache.json)
 .impeccable/
+
+# cópias soltas de plano geradas por referência @arquivo
+0*enriquecer*.md
