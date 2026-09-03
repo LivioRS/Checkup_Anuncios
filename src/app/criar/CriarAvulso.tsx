@@ -127,7 +127,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
   return (
     <>
       <Secao titulo="1. Produto">
-        <div className="campo">
+        <div className="campo pilha">
           <div className="rot">Conta</div>
           <div className="ctrl">
             <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
@@ -140,7 +140,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
           </div>
         </div>
 
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Título ({titulo.trim().length}/60)</div>
           <div className="ctrl">
             <input
@@ -153,7 +153,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
           </div>
         </div>
 
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Categoria</div>
           <div className="ctrl" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input
@@ -192,19 +192,19 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
       </Secao>
 
       <Secao titulo="2. Ficha">
-        <div className="campo">
+        <div className="campo pilha">
           <div className="rot">Marca</div>
           <div className="ctrl">
             <input type="text" value={marca} onChange={(e) => setMarca(e.target.value)} />
           </div>
         </div>
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Modelo</div>
           <div className="ctrl">
             <input type="text" value={modelo} onChange={(e) => setModelo(e.target.value)} />
           </div>
         </div>
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">GTIN / EAN (deixe vazio se não tiver)</div>
           <div className="ctrl">
             <input
@@ -215,7 +215,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
             />
           </div>
         </div>
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Garantia</div>
           <div className="ctrl" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <select
@@ -256,7 +256,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
       </Secao>
 
       <Secao titulo="4. Preço, estoque, condição e tipo">
-        <div className="campo">
+        <div className="campo pilha">
           <div className="rot">Valor (R$)</div>
           <div className="ctrl">
             <input
@@ -268,7 +268,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
             />
           </div>
         </div>
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Quantidade</div>
           <div className="ctrl">
             <input
@@ -280,7 +280,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
             />
           </div>
         </div>
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Condição</div>
           <div className="ctrl">
             <select value={condicao} onChange={(e) => setCondicao(e.target.value as 'new' | 'used')}>
@@ -289,7 +289,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
             </select>
           </div>
         </div>
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Tipo de anúncio</div>
           <div className="ctrl">
             <select
