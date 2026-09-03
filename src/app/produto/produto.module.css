@@ -1,0 +1,335 @@
+/* Página de apresentação do produto — paleta própria, isolada via CSS Module
+   pra não colidir com as classes do painel interno (.card, .grid, .btn…). */
+
+.pagina {
+  /* estica além do .wrap (1180px) do layout pra seções full-bleed */
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  width: 100vw;
+  max-width: 100vw;
+  /* cancela o padding-top do <main class="wrap"> pra o hero colar no header */
+  margin-top: -28px;
+}
+
+/* ---------- hero ---------- */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(760px 420px at 82% -10%, rgba(56, 189, 248, 0.35), transparent 60%),
+    linear-gradient(135deg, #0b1e4d 0%, #163e8c 55%, #2a78d6 100%);
+  color: #f5f8ff;
+  padding: 72px 24px 88px;
+}
+.heroInner {
+  max-width: 780px;
+  margin: 0 auto;
+  text-align: center;
+}
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #bcd6ff;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 6px 14px;
+  border-radius: 999px;
+  margin-bottom: 22px;
+}
+.kicker .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffb020;
+}
+.heroTitulo {
+  font-size: clamp(32px, 5vw, 48px);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  margin: 0 0 18px;
+}
+.heroTitulo em {
+  font-style: normal;
+  background: linear-gradient(90deg, #ffd27a, #ffb020);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.heroSub {
+  font-size: 17px;
+  line-height: 1.6;
+  color: #d7e4fb;
+  max-width: 600px;
+  margin: 0 auto 34px;
+}
+.heroAcoes {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 46px;
+}
+.btnPrimario,
+.btnSecundario {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 13px 24px;
+  border-radius: 11px;
+  text-decoration: none;
+  transition: transform 0.12s, box-shadow 0.12s, background 0.12s, border-color 0.12s;
+}
+.btnPrimario {
+  background: linear-gradient(180deg, #ffc751, #ffb020);
+  color: #201200;
+  box-shadow: 0 8px 20px rgba(255, 176, 32, 0.35);
+}
+.btnPrimario:hover {
+  transform: translateY(-1px);
+  text-decoration: none;
+  box-shadow: 0 10px 24px rgba(255, 176, 32, 0.45);
+}
+.btnSecundario {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  color: #f5f8ff;
+}
+.btnSecundario:hover {
+  background: rgba(255, 255, 255, 0.12);
+  text-decoration: none;
+}
+
+.heroFaixa {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 28px;
+  padding-top: 30px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  max-width: 720px;
+  margin: 0 auto;
+}
+.heroFaixaItem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: #cfe0fa;
+  white-space: nowrap;
+}
+.heroFaixaItem svg {
+  flex: none;
+  color: #6fe3a8;
+}
+
+/* ---------- seções gerais ---------- */
+
+.secao {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 72px 24px;
+}
+.secaoCabecalho {
+  text-align: center;
+  max-width: 620px;
+  margin: 0 auto 44px;
+}
+.secaoKicker {
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--acento);
+  margin: 0 0 10px;
+}
+.secaoTitulo {
+  font-size: 28px;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  text-transform: none;
+  font-weight: 700;
+  margin: 0 0 12px;
+  color: var(--tinta);
+}
+.secaoSub {
+  font-size: 15.5px;
+  line-height: 1.6;
+  color: var(--tinta-2);
+  margin: 0;
+}
+
+/* ---------- grid de recursos ---------- */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 18px;
+}
+.cartao {
+  background: var(--superficie);
+  border: 1px solid var(--linha);
+  border-radius: 16px;
+  padding: 24px 22px;
+  box-shadow: var(--sombra);
+}
+.cartaoIcone {
+  width: 42px;
+  height: 42px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  background: var(--acento-suave);
+  color: var(--acento);
+}
+.cartao h3 {
+  font-size: 15.5px;
+  font-weight: 650;
+  margin: 0 0 8px;
+  color: var(--tinta);
+}
+.cartao p {
+  font-size: 13.8px;
+  line-height: 1.58;
+  color: var(--tinta-2);
+  margin: 0;
+}
+
+/* ---------- como funciona ---------- */
+
+.passos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 28px;
+  counter-reset: passo;
+  position: relative;
+}
+.passo {
+  position: relative;
+  padding-left: 2px;
+}
+.passoNumero {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--acento);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 14px;
+}
+.passo h3 {
+  font-size: 15px;
+  font-weight: 650;
+  margin: 0 0 6px;
+  color: var(--tinta);
+}
+.passo p {
+  font-size: 13.6px;
+  line-height: 1.58;
+  color: var(--tinta-2);
+  margin: 0;
+}
+
+/* ---------- confiança ---------- */
+
+.confianca {
+  background: var(--superficie-2);
+  border-top: 1px solid var(--linha);
+  border-bottom: 1px solid var(--linha);
+}
+.confiancaGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 30px;
+  align-items: start;
+}
+.confiancaItem {
+  display: flex;
+  gap: 14px;
+}
+.confiancaIcone {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bom) 14%, transparent);
+  color: var(--bom-tinta);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.confiancaItem h3 {
+  font-size: 14.5px;
+  font-weight: 650;
+  margin: 0 0 5px;
+  color: var(--tinta);
+}
+.confiancaItem p {
+  font-size: 13.4px;
+  line-height: 1.55;
+  color: var(--tinta-2);
+  margin: 0;
+}
+
+/* ---------- cta final ---------- */
+
+.ctaFinal {
+  text-align: center;
+  background: linear-gradient(135deg, #0b1e4d 0%, #163e8c 60%, #2a78d6 100%);
+  color: #f5f8ff;
+  border-radius: 24px;
+  padding: 56px 32px;
+  margin: 0 24px 88px;
+  max-width: 1132px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.ctaFinal h2 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 12px;
+  color: #f5f8ff;
+  text-transform: none;
+}
+.ctaFinal p {
+  font-size: 15px;
+  color: #d7e4fb;
+  max-width: 480px;
+  margin: 0 auto 28px;
+}
+
+/* ---------- rodapé da página ---------- */
+
+.rodape {
+  text-align: center;
+  padding: 0 24px 60px;
+  font-size: 12.5px;
+  color: var(--tinta-3);
+  max-width: 620px;
+  margin: 0 auto;
+  line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  .secao {
+    padding: 52px 20px;
+  }
+  .hero {
+    padding: 56px 18px 64px;
+  }
+}

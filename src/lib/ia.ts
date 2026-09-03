@@ -84,7 +84,11 @@ export async function perguntarAoClaude(prompt: string, maxTokens = 2000): Promi
 export function limparParaDescricao(texto: string): string {
   return texto
     .replace(/<[^>]*>/g, '')
-    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, '')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu, '')
+    // Seletor de variação (força apresentação emoji) — separado da classe acima
+    // de propósito: combinado com outro ponto de código na MESMA classe, o
+    // ESLint marca como "misleading character class" (no-misleading-character-class).
+    .replace(/\u{FE0F}/gu, '')
     .replace(/\r\n?/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .replace(/[ \t]+\n/g, '\n')

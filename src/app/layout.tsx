@@ -1,10 +1,19 @@
 import './globals.css';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'Check-up de Anúncio',
   description: 'Check-up, correção e melhoria dos anúncios do Mercado Livre',
+  manifest: '/manifest.json',
+  icons: {
+    icon: '/icons/icon-512.png',
+    apple: '/icons/icon-512.png',
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#2a78d6',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -19,6 +28,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </Link>
             <nav>
               <Link href="/">Buscar anúncio</Link>
+              <Link href="/criar">Criar anúncio</Link>
+              <Link href="/produto">Sobre o produto</Link>
             </nav>
           </div>
         </header>

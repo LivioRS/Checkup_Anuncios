@@ -1,25 +1,21 @@
 import { NextResponse } from 'next/server';
 import { mlFetch, MlError, comConta } from '@/lib/ml/client';
 import { abrirAnuncio, donoDoAnuncio } from '@/lib/ml/dono';
-import { getCategoryAttributes } from '@/lib/ml/attributes';
-import { tendenciasDaCategoria } from '@/lib/ml/analise';
-import { cruzarComTitulo } from '@/lib/ml/tendencias';
-import {
-  perguntarAoClaude,
-  promptTitulo,
-  lerPlanoTitulo,
-  LIMITE_TITULO,
-  LIMITE_MODELO_PADRAO,
-  type AtributoResumo,
-} from '@/lib/ia';
-import { garantirDono, registrarEscrita } from '@/lib/auditoria';
+import { registrarEscrita } from '@/lib/auditoria';
+import { gerarPropostaTitulo } from '@/lib/ml/titulo';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 const VERSAO = 'titulo-2026-08-25-c';
 
-/** POST — só pensa: devolve 3 títulos e uma sugestão de MODEL. Não grava nada. */
+/**
+ * POST — só pensa: devolve 3 títulos e uma sugestão de MODEL. Não grava nada.
+ *
+ * A geração vive em `src/lib/ml/titulo.ts` (`gerarPropostaTitulo`) desde o plano
+ * 025 (f2c2), para o worker de lote reusar a MESMA lógica. Aqui é só o wrapper:
+ * resolve a conta dona e converte `{ status, corpo }` em `NextResponse`.
+ */
 export async function POST(_req: Request, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
 
@@ -27,67 +23,8 @@ export async function POST(_req: Request, ctx: { params: Promise<{ id: string }>
     const { item, conta } = await abrirAnuncio(id);
 
     return await comConta(conta?.seller_id, async () => {
-      const termos = await tendenciasDaCategoria(item.category_id, item.site_id ?? 'MLB').catch(
-        () => [],
-      );
-      if (!termos.length) {
-        return NextResponse.json(
-          { erro: `O Mercado Livre não publica tendências para a categoria ${item.category_id}.` },
-          { status: 422 },
-        );
-      }
-
-      let atributos: any[] = [];
-      let modeloAtual: string | null = null;
-      let limiteModelo: number | null = null;
-      try {
-        const catAttrs = await getCategoryAttributes(item.category_id);
-        limiteModelo = catAttrs.find((a) => a.id === 'MODEL')?.value_max_length ?? null;
-        const nomes = new Map(catAttrs.map((a) => [a.id, a.name]));
-        for (const a of item.attributes ?? []) {
-          if (!a.value_name || a.value_id === '-1') continue;
-          if (a.id === 'MODEL') modeloAtual = a.value_name;
-          atributos.push({ nome: a.name, valor: a.value_name });
-        }
-      } catch {
-        /* ignore */
-      }
-
-      const { dentro } = cruzarComTitulo(item.title ?? '', termos);
-      const porBloco = (b: string) =>
-        termos.filter((t) => t.bloco === b).map((t) => t.keyword);
-
-      const bruto = await perguntarAoClaude(
-        {
-          titulo: item.title ?? '',
-          categoria: item.category_id,
-          atributos,
-          modeloAtual,
-          emAlta: porBloco('crescimento'),
-          maisBuscadas: porBloco('buscadas'),
-          populares: porBloco('populares'),
-          jaNoTitulo: dentro.map((t) => t.keyword),
-          limiteModelo: limiteModelo ?? 60,
-        },
-        3000,
-      );
-
-      const plano = lerPlanoTitulo(bruto);
-      if (!plano) {
-        return NextResponse.json(
-          { erro: 'Não consegui interpretar a resposta.', bruto: bruto.slice(0, 500) },
-          { status: 502 },
-        );
-      }
-
-      return NextResponse.json({
-        plano,
-        atual: item.title ?? '',
-        modeloAtual,
-        limiteModelo,
-        podeGravar: !!conta && !item.catalog_listing,
-        catalogo: !!item.catalog_listing,
-      });
+      const { status, corpo } = await gerarPropostaTitulo(item, { temConta: !!conta });
+      return NextResponse.json(corpo, { status });
     });
   } catch (e) {
     const status = e instanceof MlError ? e.status : 500;
@@ -188,7 +125,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
           conta,
           itemId: id,
           payload: { [primeiro]: titulo },
-          antes: { [primeiro]: item[primeiro] ?? null },
+          antes: { [primeiro]: item?.[primeiro] ?? null },
           status: 200,
         });
       } catch (e1) {
@@ -199,7 +136,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
             conta,
             itemId: id,
             payload: { [primeiro]: titulo },
-            antes: { [primeiro]: item[primeiro] ?? null },
+            antes: { [primeiro]: item?.[primeiro] ?? null },
             status: 500,
           });
         } else {
@@ -213,7 +150,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
               conta,
               itemId: id,
               payload: { [segundo]: titulo },
-              antes: { [segundo]: item[segundo] ?? null },
+              antes: { [segundo]: item?.[segundo] ?? null },
               status: 200,
             });
           } catch (e2) {
@@ -228,7 +165,7 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
               conta,
               itemId: id,
               payload: { [segundo]: titulo },
-              antes: { [segundo]: item[segundo] ?? null },
+              antes: { [segundo]: item?.[segundo] ?? null },
               status: 500,
             });
           }
@@ -242,12 +179,6 @@ export async function PUT(req: Request, ctx: { params: Promise<{ id: string }> }
     return NextResponse.json(resultado, { status: tudoOk ? 200 : 207 });
   });
 }
-
-type Travado = {
-  motivo: string;
-  vendas: number;
-  irmaos: { id: string; vendas: number; status?: string }[];
-};
 
 async function porQueTravou(
   sellerId: string,
@@ -293,10 +224,4 @@ async function porQueTravou(
   } catch {
     return null;
   }
-}
-
-function ehErroDeCampoDoTitulo(e: unknown): boolean {
-  if (!(e instanceof MlError)) return false;
-  const texto = JSON.stringify(e.body ?? '').toLowerCase();
-  return texto.includes('family_name') || texto.includes('body_invalid_fields');
 }
