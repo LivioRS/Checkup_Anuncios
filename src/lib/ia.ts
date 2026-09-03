@@ -90,12 +90,30 @@ function despacharIA(content: unknown, maxTokens: number): Promise<string> {
   throw new Error('Nenhuma IA configurada — defina OPENROUTER_API_KEY ou ANTHROPIC_API_KEY no .env.local');
 }
 
+/**
+ * `fetch` com 2 retentativas em 429 (rate-limit — comum em modelo `:free` do OpenRouter) e 529
+ * (sobrecarga). Respeita o `Retry-After`, com teto de 8s por espera pra não estourar o
+ * `maxDuration` de 60s das rotas.
+ */
+async function fetchIaComRetry(url: string, init: RequestInit): Promise<Response> {
+  for (let tentativa = 0; ; tentativa += 1) {
+    const res = await fetch(url, init);
+    if ((res.status !== 429 && res.status !== 529) || tentativa >= 2) return res;
+    const retryAfter = Number(res.headers.get('retry-after'));
+    const esperaMs = Math.min(
+      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 2500 * (tentativa + 1),
+      8000,
+    );
+    await new Promise((r) => setTimeout(r, esperaMs));
+  }
+}
+
 async function perguntarViaAnthropic(content: unknown, maxTokens: number): Promise<string> {
   // Se o modelo sair de linha, troque em ANTHROPIC_MODEL.
   // Lista atual: https://docs.claude.com/en/docs/about-claude/models
   const modelo = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
 
-  const res = await fetch(ANTHROPIC_API, {
+  const res = await fetchIaComRetry(ANTHROPIC_API, {
     method: 'POST',
     headers: {
       'x-api-key': process.env.ANTHROPIC_API_KEY as string,
@@ -132,7 +150,7 @@ async function perguntarViaOpenRouter(content: unknown, maxTokens: number): Prom
     );
   }
 
-  const res = await fetch(OPENROUTER_API, {
+  const res = await fetchIaComRetry(OPENROUTER_API, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${process.env.OPENROUTER_API_KEY as string}`,
@@ -151,10 +169,14 @@ async function perguntarViaOpenRouter(content: unknown, maxTokens: number): Prom
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = json?.error?.message ?? JSON.stringify(json).slice(0, 300);
-    const dica =
-      res.status === 404 || /no endpoints found/i.test(String(msg))
-        ? ` — o modelo "${modelo}" não está disponível pra sua conta. Troque OPENROUTER_MODEL no .env.local (https://openrouter.ai/models).`
-        : '';
+    let dica = '';
+    if (res.status === 404 || /no endpoints found/i.test(String(msg))) {
+      dica = ` — o modelo "${modelo}" não está disponível pra sua conta. Troque OPENROUTER_MODEL no .env.local (https://openrouter.ai/models).`;
+    } else if (res.status === 429) {
+      dica = modelo.includes(':free')
+        ? ` — limite do modelo grátis "${modelo}". Espere ~1 min, ou ponha crédito em https://openrouter.ai/credits e troque por um modelo pago barato (ex.: deepseek/deepseek-chat).`
+        : ' — rate-limit; espere um pouco e tente de novo.';
+    }
     throw new Error(`OpenRouter ${res.status}: ${msg}${dica}`);
   }
 
