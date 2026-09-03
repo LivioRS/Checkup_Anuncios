@@ -49,6 +49,7 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 030  | IA no anúncio fora do catálogo — descrição, escolha de categoria e roteiro de fotos | P1 | M | 029 | DONE (branch `feat/029-ia-avulso`) |
 | 031  | Provedor de IA plugável — OpenRouter OU Anthropic direto (sem plano próprio, mudança pequena) | P2 | S | — | DONE (branch `feat/openrouter-provider`) |
 | 032  | Enriquecer a ficha do anúncio avulso SEM agente — GTIN→catálogo (determinístico) + visão de um tiro sobre foto da etiqueta. Veredito do LLM Council. | P1 | M | 029, 030 | DONE (Partes A+B; branch `feat/032-ficha-gtin`. Parte C fora de escopo por decisão.) |
+| 033  | Rascunho de anúncio por IA — roteamento GTIN→catálogo, botão "Preencher com IA", ficha buscada no site do fabricante (web). 2 vereditos do LLM Council + decisão do Livio. | P1 | L | 029–032 | DONE (Partes A+B+C+D; branch `feat/033-rascunho-ia`) |
 
 ## Dependency notes
 
@@ -505,3 +506,44 @@ código"; e "Extrair ficha da foto" com a URL de uma foto de etiqueta.
 
 **Desvio do plano**: branch `feat/032-ficha-gtin` empilhado sobre `feat/openrouter-provider`
 (que tem o plano doc) + commit + push + PR.
+
+## Status do 033 (2026-09-03, concluído — Partes A+B+C+D)
+
+Origem: o Livio pediu "coloco só o básico e a IA preenche tudo, nada manual". Dois vereditos do
+LLM Council + a decisão dele fecharam o escopo: **IA preenche categoria/marca/modelo/ficha
+(inclusive buscando no site do fabricante)/descrição — tudo como sugestão revisável**; **foto e
+publicação continuam manuais** (regra do ML: foto real; o anúncio nasce na conta do cliente).
+
+- **Parte A — roteamento GTIN→catálogo** (o achado central dos conselhos): `CriarAvulso.tsx`
+  detecta quando o GTIN resolve pra um produto de catálogo (`produto_id` do
+  `/api/anuncios/ficha-por-gtin`) e oferece "Ir pro modo Do catálogo" levando marca/modelo/código.
+  `CriarModos.tsx` guarda `prefill`; `CriarAnuncio.tsx` aceita `prefill`.
+- **Parte B — `POST /api/anuncios/rascunho`** (rota nova): do título (+gtin/marca/modelo) monta
+  `{ category_id, marca, modelo, atributos, descricao }` — categoria via `domain_discovery`+IA,
+  marca/modelo via `promptMarcaModelo`, ficha via GTIN (determinístico) OU web (Parte C),
+  descrição via `promptDescricaoNova`. **Best-effort**: cada peça que falha volta vazia. Botão
+  "Preencher com IA" + banner fixo "confira tudo".
+- **Parte C — `POST /api/anuncios/ficha-web`** + `src/lib/web/busca.ts` (`buscarNaWeb` via
+  Tavily, atrás de `WEB_SEARCH_API_KEY`). Busca → junta 2-3 páginas → 1 chamada
+  `promptFichaDaWeb` (trechos entre delimitadores, tratados como dado — anti prompt-injection) →
+  só specs FACTUAIS; `modelo_confere:false` → devolve vazio + aviso. Botão "Buscar ficha no site
+  da marca (IA)" + lista com fontes. `.env.example` ganhou `WEB_SEARCH_PROVIDER`/`WEB_SEARCH_API_KEY`.
+- **Parte D — sem código de imagem**: o bloco "Resultado" do sucesso ganhou um link
+  "Padronizar as fotos" → `/itens/{id}/fotos` (a tela que já faz quadrado/fundo branco pra
+  anúncio existente; o recém-criado já tem `id`).
+
+**Fora de escopo (foi o maior ponto cego apontado pelo conselho)**: publicação automática, score
+de confiança, entrada em lote ("fábrica de anúncios"); geração/scraping/transformação de imagem
+de produto; preencher `attributes` do ML a partir de texto da web/foto sem o Livio mapear o `id`.
+
+**Gate completo (AGENTS.md)**: `build` / `lint` / `verificar` / `test` — verdes, **99/99**
+(9 novos em `tests/anuncios-rascunho.test.ts` — `ficha-web` nos 4 ramos, `rascunho` com ficha por
+GTIN + best-effort + validação, `lerMarcaModelo`/`lerFichaDaWeb`). Regressão de 029/030/032
+intocada.
+
+**Não testado**: contra ML/IA/Tavily de verdade — sem chaves neste ambiente. Pro Livio: pôr
+`OPENROUTER_API_KEY` (já tem) e criar chave Tavily grátis em https://tavily.com, `WEB_SEARCH_API_KEY`
+no `.env.local`. Aí `/criar` → Fora do catálogo → título → "Preencher com IA".
+
+**Desvio do plano**: branch `feat/033-rascunho-ia` empilhado sobre `feat/032-ficha-gtin`.
+Parte A commitada separada (`f91e06d`); B+C+D num commit. Push + PR.
