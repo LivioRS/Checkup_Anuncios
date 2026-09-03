@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { supabaseServidor } from '@/lib/supabase/server';
+import { textoAviso } from '@/lib/portal/avisosOauth';
 import { Selo, Secao } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +15,14 @@ type ConexaoRow = { seller_id: string; apelido: string | null; conectado_em: str
  * é essa consulta que só devolve a linha do próprio cliente por causa da policy do banco, não
  * por causa de um `WHERE` escrito aqui.
  */
-export default async function PortalPainelPage() {
+export default async function PortalPainelPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ aviso?: string }>;
+}) {
+  const { aviso: avisoRaw } = await searchParams;
+  const aviso = textoAviso(avisoRaw);
+
   const supabase = await supabaseServidor();
   const {
     data: { user },
@@ -49,7 +57,20 @@ export default async function PortalPainelPage() {
             {cliente.nome} · {cliente.email} · <Selo nivel={cliente.status === 'ativo' ? 'bom' : 'atencao'}>{cliente.status}</Selo>
           </p>
 
-          <Secao titulo="Contas do Mercado Livre conectadas">
+          {aviso ? (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <Selo nivel={aviso.nivel}>{aviso.texto}</Selo>
+            </div>
+          ) : null}
+
+          <Secao
+            titulo="Contas do Mercado Livre conectadas"
+            acao={
+              <a className="btn pequeno" href="/api/portal/ml/conectar">
+                Conectar conta do Mercado Livre
+              </a>
+            }
+          >
             {conexoes.length === 0 ? (
               <p className="sub">Nenhuma conta conectada ainda.</p>
             ) : (

@@ -89,10 +89,20 @@ export async function exchangeCodeForToken(code: string): Promise<TokenResponse>
 const JANELA_STATE_MS = 10 * 60 * 1000; // 10 min — só o tempo de ida-e-volta no navegador até o ML
 
 /**
- * `state` assinado carregando o `cliente_id`. O callback do ML não devolve nada além de
- * `code`/`state` — é o `state` que diz pra qual cliente a conexão pertence, sem confiar em query
- * string não assinada. Mesma técnica HMAC de `crypto.ts` (`assinarSessao`/`verificarSessao`),
- * mas específica do OAuth: janela curta (10 min, não 30 dias) e payload numérico, não sessão.
+ * De onde o fluxo "Conectar conta" começou (plano 027, f3c1). O ML só aceita 1 `redirect_uri`
+ * por app, então os dois pontos de partida — a tela admin `/clientes` e o `/portal/painel` do
+ * cliente logado — compartilham o mesmo callback; é o `state` assinado que diz pra onde voltar.
+ */
+export type OrigemOAuth = 'admin' | 'portal';
+
+export type StateVerificado = { clienteId: number; origem: OrigemOAuth };
+
+/**
+ * `state` assinado carregando o `cliente_id` e a origem. O callback do ML não devolve nada além
+ * de `code`/`state` — é o `state` que diz pra qual cliente a conexão pertence e pra onde
+ * redirecionar, sem confiar em query string não assinada. Mesma técnica HMAC de `crypto.ts`
+ * (`assinarSessao`/`verificarSessao`), mas específica do OAuth: janela curta (10 min, não 30
+ * dias) e payload pequeno, não sessão.
  */
 async function segredoState(): Promise<CryptoKey> {
   const s = process.env.PANEL_HMAC_SECRET ?? `dev-${process.env.PANEL_PASSWORD ?? ''}`;
@@ -117,21 +127,29 @@ function hexParaBytes(hex: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-export async function assinarState(clienteId: number, agora = Date.now()): Promise<string> {
-  const payload = `${clienteId}.${agora + JANELA_STATE_MS}`;
+export async function assinarState(
+  clienteId: number,
+  origem: OrigemOAuth = 'admin',
+  agora = Date.now(),
+): Promise<string> {
+  const payload = `${clienteId}.${origem}.${agora + JANELA_STATE_MS}`;
   const chave = await segredoState();
   const sig = await crypto.subtle.sign('HMAC', chave, new TextEncoder().encode(payload));
   return `${payload}.${bytesParaHex(sig)}`;
 }
 
 /** `null` quando adulterado, expirado ou malformado — o chamador decide o que fazer. */
-export async function verificarState(state: string, agora = Date.now()): Promise<number | null> {
+export async function verificarState(
+  state: string,
+  agora = Date.now(),
+): Promise<StateVerificado | null> {
   const partes = state.split('.');
-  if (partes.length !== 3) return null;
-  const [clienteIdRaw, expRaw, sig] = partes;
+  if (partes.length !== 4) return null;
+  const [clienteIdRaw, origemRaw, expRaw, sig] = partes;
   const clienteId = Number(clienteIdRaw);
   const exp = Number(expRaw);
   if (!Number.isFinite(clienteId) || !Number.isFinite(exp) || exp <= agora) return null;
+  if (origemRaw !== 'admin' && origemRaw !== 'portal') return null;
 
   const chave = await segredoState();
   let ok = false;
@@ -140,10 +158,10 @@ export async function verificarState(state: string, agora = Date.now()): Promise
       'HMAC',
       chave,
       hexParaBytes(sig),
-      new TextEncoder().encode(`${clienteIdRaw}.${expRaw}`),
+      new TextEncoder().encode(`${clienteIdRaw}.${origemRaw}.${expRaw}`),
     );
   } catch {
     return null;
   }
-  return ok ? clienteId : null;
+  return ok ? { clienteId, origem: origemRaw } : null;
 }

@@ -14,6 +14,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ erro: 'cliente_id inválido ou ausente' }, { status: 400 });
   }
 
-  const state = await assinarState(clienteId);
+  const state = await assinarState(clienteId, 'admin');
   return NextResponse.redirect(buildAuthorizationUrl(state));
 }

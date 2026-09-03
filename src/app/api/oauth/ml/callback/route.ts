@@ -1,15 +1,17 @@
 import { NextResponse } from 'next/server';
 import { ML_API } from '@/lib/env';
-import { exchangeCodeForToken, verificarState } from '@/lib/ml/oauth';
+import { exchangeCodeForToken, verificarState, type OrigemOAuth } from '@/lib/ml/oauth';
 import { salvarConexaoCliente, ConflitoDeContaError } from '@/lib/ml/clientAccounts';
 
 /**
- * Callback do fluxo `authorization_code` (plano 022, card f1c3). O ML redireciona o navegador
- * pra cá com `code`+`state` (ou `error`, se o usuário negar). Nunca usa `next`/redirect vindo do
- * usuário — o destino final é sempre `/clientes`, fixo, sem risco de open redirect.
+ * Callback do fluxo `authorization_code` (plano 022, card f1c3; origem `portal` no plano 027,
+ * f3c1). O ML redireciona o navegador pra cá com `code`+`state` (ou `error`, se o usuário
+ * negar). Nunca usa `next`/redirect vindo do usuário — o destino é `/clientes` (admin) ou
+ * `/portal/painel` (cliente logado), decidido pelo `state` ASSINADO, sem risco de open redirect.
  */
-function paginaClientes(req: Request, aviso: string): NextResponse {
-  const url = new URL('/clientes', req.url);
+function paginaRetorno(req: Request, origem: OrigemOAuth, aviso: string): NextResponse {
+  const destino = origem === 'portal' ? '/portal/painel' : '/clientes';
+  const url = new URL(destino, req.url);
   url.searchParams.set('aviso', aviso);
   return NextResponse.redirect(url);
 }
@@ -17,22 +19,24 @@ function paginaClientes(req: Request, aviso: string): NextResponse {
 export async function GET(req: Request) {
   const url = new URL(req.url);
 
+  // Sem `state` verificado ainda, o erro inicial só pode voltar pro admin — é o fluxo antigo.
   const erroMl = url.searchParams.get('error');
-  if (erroMl) return paginaClientes(req, `ml_negou:${erroMl}`);
+  if (erroMl) return paginaRetorno(req, 'admin', `ml_negou:${erroMl}`);
 
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
-  if (!code || !state) return paginaClientes(req, 'faltando_code_ou_state');
+  if (!code || !state) return paginaRetorno(req, 'admin', 'faltando_code_ou_state');
 
-  const clienteId = await verificarState(state);
-  if (clienteId === null) return paginaClientes(req, 'state_invalido');
+  const verificado = await verificarState(state);
+  if (!verificado) return paginaRetorno(req, 'admin', 'state_invalido');
+  const { clienteId, origem } = verificado;
 
   let token;
   try {
     token = await exchangeCodeForToken(code);
   } catch (e) {
     const msg = e instanceof Error ? e.message.slice(0, 80) : 'erro desconhecido';
-    return paginaClientes(req, `troca_falhou:${msg}`);
+    return paginaRetorno(req, origem, `troca_falhou:${msg}`);
   }
 
   // Prova real de que o token funciona, e dá um apelido melhor que o seller_id cru pra exibir.
@@ -62,10 +66,10 @@ export async function GET(req: Request) {
     });
   } catch (e) {
     if (e instanceof ConflitoDeContaError) {
-      return paginaClientes(req, `conflito:${e.message.slice(0, 140)}`);
+      return paginaRetorno(req, origem, `conflito:${e.message.slice(0, 140)}`);
     }
     throw e;
   }
 
-  return paginaClientes(req, 'conectado');
+  return paginaRetorno(req, origem, 'conectado');
 }

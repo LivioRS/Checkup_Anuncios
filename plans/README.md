@@ -45,6 +45,8 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 023  | Login de cliente com RLS de verdade, Supabase Auth em `/portal/*` (kanban "Do Anúncio ao Portal" f1c4) | P1 | L | 021, 022 | DONE |
 | 024  | Fila e worker assíncrono pra operações em lote (kanban "Do Anúncio ao Portal" f2c1) | P1 | M | 020 | DONE |
 | 025  | Estender o lote pra título/descrição, só geração — gravação continua manual/revisada (kanban "Do Anúncio ao Portal" f2c2) | P1 | M | 024 | DONE |
+| 026  | Tela de progresso do lote — criar/acompanhar pela UI, tique-taque, "repetir o que falhou" (kanban "Do Anúncio ao Portal" f2c3) | P1 | M | 024, 025 | DONE (branch `feat/f2c3-tela-progresso-lote`) |
+| 027  | Roteiro da Fase 3 (portal público) + f3c0 (bug middleware) + f3c1 (cliente conecta a própria conta ML) | P1 | L | 022, 023 | ROTEIRO + f3c0/f3c1 DONE; f3c2+ aguardam decisões |
 | 029  | Criar anúncio FORA do catálogo (produto sem PDP / lançamento) — era o fallback adiado do 019 | P1 | L | 019 | DONE (branch `feat/anuncio-fora-catalogo`) |
 | 030  | IA no anúncio fora do catálogo — descrição, escolha de categoria e roteiro de fotos | P1 | M | 029 | DONE (branch `feat/029-ia-avulso`) |
 | 031  | Provedor de IA plugável — OpenRouter OU Anthropic direto (sem plano próprio, mudança pequena) | P2 | S | — | DONE (branch `feat/openrouter-provider`) |
@@ -547,3 +549,49 @@ no `.env.local`. Aí `/criar` → Fora do catálogo → título → "Preencher c
 
 **Desvio do plano**: branch `feat/033-rascunho-ia` empilhado sobre `feat/032-ficha-gtin`.
 Parte A commitada separada (`f91e06d`); B+C+D num commit. Push + PR.
+
+## Status do 027 (2026-09-03) — roteiro da Fase 3 + f3c0 + f3c1
+
+`plans/027-fase-3-roteiro.md` é um **roteiro**, não um card: quebra a Fase 3 (portal público) em
+f3c0–f3c6, separa o mecânico do que depende de decisão de produto sua, e registra o buraco
+central (não existe caminho pra rodar o motor no nome de um cliente do portal — `client.ts` só
+conhece a tabela `contas`). **f3c2+ não foram implementados** — aguardam suas respostas às 5
+decisões de produto no fim do roteiro.
+
+Implementados nesta passada os dois cards mecânicos e de baixo risco:
+
+**f3c0 — bug do middleware** (achado na pesquisa): `/api/portal/completar-cadastro` e
+`/api/portal/logout` não começam com `/portal`, então caíam no gate do `PANEL_PASSWORD` e eram
+redirecionados (302) pra `/login` — logout falhava calado e o cadastro self-service quebrava no
+passo 2 em produção. Provável razão de não ter pego antes: o "fluxo de browser de verdade" do
+plano 023 nunca foi testado (STOP condition do 023). Correção: `middleware()` roteia
+`/portal/*` **e** `/api/portal/*` por `tratarRotaPortal`; sem sessão numa rota `/api/`, responde
+`401` JSON em vez de redirect.
+
+**f3c1 — cliente conecta a própria conta ML pelo portal**:
+- `src/lib/ml/oauth.ts` — `assinarState(clienteId, origem, agora)` e `verificarState` agora
+  carregam `origem: 'admin' | 'portal'` no `state` assinado (HMAC cobre a origem). O ML só
+  aceita 1 `redirect_uri` por app, então os dois pontos de partida dividem o mesmo callback e é
+  o `state` que diz pra onde voltar. Formato do state mudou de 3 pra 4 partes — state antigo em
+  voo vira inválido (janela de 10 min, usuário só clica de novo).
+- `src/app/api/portal/ml/conectar/route.ts` (novo) — lê o `cliente_id` da **sessão Supabase**
+  (query RLS-scoped, sem `?cliente_id=` na query como a rota admin), assina com `origem:'portal'`.
+- `src/app/api/oauth/ml/callback/route.ts` — redireciona pra `/portal/painel` ou `/clientes`
+  conforme `origem`. `paginaClientes` → `paginaRetorno(req, origem, aviso)`.
+- `src/lib/portal/avisosOauth.ts` (novo) — mapa de `?aviso=` extraído de `/clientes`, agora
+  compartilhado com `/portal/painel`.
+- `src/app/portal/painel/page.tsx` — botão "Conectar conta do Mercado Livre" + leitura do
+  `?aviso=`.
+
+**Gate completo (AGENTS.md)**: `npm run build` / `lint` / `verificar` / `test` — verdes,
+**64/64** testes (58 na `main` + 6 novos: `verificarState` com `origem`, e o callback
+redirecionando por `origem` nos 4 ramos). `tests/oauth-state.test.ts` atualizado pro novo
+contrato de `verificarState` (retorna `{ clienteId, origem }`).
+
+**Não testado unitariamente** (dependem de `next/headers`/`NextRequest`, que o repo não mocka —
+mesma limitação dos testes de `/portal/*` do plano 023): `/api/portal/ml/conectar` e o gate do
+`middleware.ts`. Ficam pro teste manual no browser, junto com o resto do fluxo do portal que o
+plano 023 também deixou pendente.
+
+**Desvio do plano**: branch `feat/fase3-conectar-conta` a partir da `main` (já com o PR #1
+mergeado) + commit + push + PR.

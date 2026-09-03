@@ -58,6 +58,11 @@ async function tratarRotaPortal(req: NextRequest): Promise<NextResponse> {
     return resposta;
   }
 
+  // Rota de API do portal sem sessão: 401, não redirect (o chamador é `fetch`, não o navegador).
+  if (pathname.startsWith('/api/')) {
+    return NextResponse.json({ erro: 'não autenticado' }, { status: 401 });
+  }
+
   const url = req.nextUrl.clone();
   url.pathname = '/portal/login';
   return NextResponse.redirect(url);
@@ -65,7 +70,12 @@ async function tratarRotaPortal(req: NextRequest): Promise<NextResponse> {
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (pathname.startsWith('/portal')) return tratarRotaPortal(req);
+  // `/portal/*` (páginas) E `/api/portal/*` (rotas que o portal chama) seguem a sessão Supabase,
+  // não o `PANEL_PASSWORD`. Sem este `/api/portal`, `completar-cadastro` e `logout` caíam no
+  // gate do painel e eram redirecionados pra `/login` (plano 027, f3c0).
+  if (pathname.startsWith('/portal') || pathname.startsWith('/api/portal')) {
+    return tratarRotaPortal(req);
+  }
   if (ehRotaPublica(pathname)) return NextResponse.next();
 
   const senha = process.env.PANEL_PASSWORD;
