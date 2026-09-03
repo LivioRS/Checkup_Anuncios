@@ -1,16 +1,16 @@
 import { listarContas } from '@/lib/ml/client';
 import { Secao } from '@/components/ui';
-import CriarAnuncio from './CriarAnuncio';
+import CriarModos from './CriarModos';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Criação rápida de anúncio via catálogo (plano 019).
+ * Criação de anúncio — dois modos (plano 019 + plano 029):
+ * - "Do catálogo": marca/modelo/código → produto de catálogo do ML → anúncio vinculado.
+ * - "Fora do catálogo": produto sem PDP (lançamento, nicho) → o vendedor informa tudo.
  *
- * Fica fora do escopo "abrir anúncio existente" da home: aqui não há anúncio
- * ainda, só um candidato de catálogo virando um. O seletor de conta é próprio
- * porque, ao contrário do resto do painel, não há anúncio para descobrir de
- * quem é — quem escolhe a conta é você.
+ * Fica fora do escopo "abrir anúncio existente" da home: aqui não há anúncio ainda. O seletor
+ * de conta é próprio porque não há anúncio para descobrir de quem é — quem escolhe é você.
  */
 export default async function CriarPage() {
   let contas: { id: number; seller_id: string; apelido: string | null; org: string | null }[] = [];
@@ -41,15 +41,5 @@ export default async function CriarPage() {
     );
   }
 
-  return (
-    <>
-      <h1>Criar anúncio via catálogo</h1>
-      <p className="sub">
-        Informe marca, modelo e (se tiver) o código do produto. Se ele estiver no catálogo do
-        Mercado Livre, o anúncio sai em segundos — sempre como <strong>rascunho pausado</strong>,
-        para alguém conferir antes de ativar.
-      </p>
-      <CriarAnuncio contas={contas} />
-    </>
-  );
+  return <CriarModos contas={contas} />;
 }

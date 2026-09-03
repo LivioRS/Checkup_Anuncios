@@ -45,6 +45,7 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 023  | Login de cliente com RLS de verdade, Supabase Auth em `/portal/*` (kanban "Do Anúncio ao Portal" f1c4) | P1 | L | 021, 022 | DONE |
 | 024  | Fila e worker assíncrono pra operações em lote (kanban "Do Anúncio ao Portal" f2c1) | P1 | M | 020 | DONE |
 | 025  | Estender o lote pra título/descrição, só geração — gravação continua manual/revisada (kanban "Do Anúncio ao Portal" f2c2) | P1 | M | 024 | DONE |
+| 029  | Criar anúncio FORA do catálogo (produto sem PDP / lançamento) — era o fallback adiado do 019 | P1 | L | 019 | DONE (branch `feat/anuncio-fora-catalogo`) |
 
 ## Dependency notes
 
@@ -387,3 +388,39 @@ Fica pro Livio, depois de aplicar a migração e fazer deploy: criar um lote peq
 **Desvio do plano**: o "Git workflow" foi seguido desta vez — há `git` real nesta sessão. As
 mudanças pendentes na árvore de trabalho (planos 020-024, escritos mas nunca commitados) e o
 plano 025 foram organizados em branch + commit + PR.
+
+## Status do 029 (2026-09-03, concluído)
+
+Era o "fallback de criação sem correspondência no catálogo" listado em "Findings considered and
+rejected" (adiado do 019). O `/criar` agora tem dois modos: **Do catálogo** (019, intocado) e
+**Fora do catálogo** (novo) — pra produto sem PDP no ML (lançamento, nicho).
+
+**Arquivos criados**: `src/app/api/anuncios/avulso/route.ts` (`POST` — cria item de marketplace:
+`title`/`category_id`/`price`/`pictures[source]`/`attributes` BRAND+MODEL+GTIN-ou-EMPTY_GTIN_REASON/
+`sale_terms` da garantia/`listing_type_id`; **mesmo invariante do 019** — nasce `paused`, PUT de
+pausa se o ML ignorar, tudo logado em `anuncio_criacoes` com `catalog_product_id: null`;
+descrição opcional via `PUT /items/{id}/description` best-effort depois do create),
+`src/app/api/anuncios/categoria/route.ts` (`GET` só-leitura — `domain_discovery` do ML sugere
+`category_id` pelo título), `src/app/criar/CriarModos.tsx` (toggle dos dois modos),
+`src/app/criar/CriarAvulso.tsx` (form do modo avulso), `tests/anuncios-avulso.test.ts`.
+
+**Arquivos editados**: `src/lib/auditoria.ts` (`registrarCriacaoAnuncio.catalogProductId` virou
+opcional — `?? null` no insert; o 019 continua passando a string, comportamento idêntico),
+`src/app/criar/page.tsx` (renderiza `CriarModos` em vez de `CriarAnuncio` direto).
+**`src/app/api/anuncios/route.ts` (catálogo) NÃO foi tocado.**
+
+**Gate completo (AGENTS.md)**: `build` / `lint` / `verificar` / `test` — verdes, **64/64**
+(58 + 6 novos: payload avulso correto e sem `catalog_listing`; GTIN quando informado; ML devolve
+"active" → PUT pausa; descrição best-effort loga erro sem derrubar o sucesso; create recusado
+loga a falha com `item_id`/`catalog_product_id` null; validação antes do ML).
+`tests/anuncios.test.ts` (catálogo, 019) roda junto e **continua 100% verde**.
+
+**Fora de escopo (follow-ups)**: form dinâmico de atributos obrigatórios por categoria além de
+BRAND/MODEL/GTIN (se o ML recusar por atributo faltando, o erro cru volta pro vendedor);
+variações; `shipping` (dimensões/peso/frete grátis — hoje o ML aplica o default da conta);
+upload de arquivo de imagem (só URL). Detalhado no fim de `plans/029-anuncio-fora-do-catalogo.md`.
+
+**Não testado**: criar um anúncio avulso de verdade contra o ML — sem `ML_CLIENT_ID`/token neste
+ambiente (mesma natureza do teste manual pendente do 019).
+
+**Desvio do plano**: branch `feat/anuncio-fora-catalogo` a partir da `main` + commit + push + PR.

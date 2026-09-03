@@ -19,6 +19,7 @@ Stack: Next.js 15 (App Router, TypeScript) + Supabase + Claude (opcional).
 | **Catálogo** | `/itens/[id]/catalogo` | Explorador de User Products / anúncios do mesmo produto |
 | **Fotos** | `/itens/[id]/fotos` | Galeria, diagnóstico oficial de imagem e as duas correções |
 | **Descrição** | `/itens/[id]/descricao` | Dez notas do Claude, reescrita com base na ficha e nas avaliações, blocos fixos da loja |
+| **Criar anúncio** | `/criar` | Dois modos: **do catálogo** (marca/modelo → produto do ML → anúncio vinculado, plano 019) e **fora do catálogo** (produto sem PDP: título, categoria, ficha e fotos, plano 029). Sempre nasce pausado |
 | **Login** | `/login` | Senha única do painel (middleware falha fechado em produção) |
 
 ---
