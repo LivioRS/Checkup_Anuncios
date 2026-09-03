@@ -1,0 +1,173 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeFakeSupabase } from './helpers/supabase-fake';
+import { injetarCliente } from '../src/lib/supabase';
+import { lerEscolhaCategoria, lerRoteiroFotos } from '../src/lib/ia';
+import { GET as categoriaGET } from '../src/app/api/anuncios/categoria/route';
+import { POST as iaPOST } from '../src/app/api/anuncios/ia/route';
+
+/** Plano 030 — IA no anúncio fora do catálogo: descrição, escolha de categoria, roteiro de fotos. */
+
+const HORA = 60 * 60 * 1000;
+
+function conta() {
+  return {
+    id: 1,
+    seller_id: '2490900',
+    apelido: 'X',
+    org: null,
+    access_token: 'tok',
+    refresh_token: 'r',
+    access_expira_em: new Date(Date.now() + 6 * HORA).toISOString(),
+  };
+}
+
+function responseBody(json: unknown, status = 200) {
+  return new Response(JSON.stringify(json), { status, headers: { 'content-type': 'application/json' } });
+}
+
+function claude(texto: string) {
+  return responseBody({ content: [{ type: 'text', text: texto }] });
+}
+
+beforeEach(() => {
+  process.env.ML_CLIENT_ID = 'c';
+  process.env.ML_CLIENT_SECRET = 's';
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  injetarCliente(null);
+  delete process.env.ANTHROPIC_API_KEY;
+});
+
+describe('lerEscolhaCategoria', () => {
+  it('aceita id que está na lista de válidos', () => {
+    const r = lerEscolhaCategoria('{"category_id":"MLB1","motivo":"é isso"}', ['MLB1', 'MLB2']);
+    expect(r).toEqual({ category_id: 'MLB1', motivo: 'é isso' });
+  });
+  it('rejeita id fora da lista (anti-alucinação)', () => {
+    expect(lerEscolhaCategoria('{"category_id":"MLB999","motivo":"x"}', ['MLB1', 'MLB2'])).toBeNull();
+  });
+  it('tolera cercas de código', () => {
+    const r = lerEscolhaCategoria('```json\n{"category_id":"MLB2","motivo":""}\n```', ['MLB1', 'MLB2']);
+    expect(r?.category_id).toBe('MLB2');
+  });
+});
+
+describe('lerRoteiroFotos', () => {
+  it('parseia a lista de fotos', () => {
+    const r = lerRoteiroFotos('{"fotos":[{"titulo":"Capa","descricao":"fundo branco"},{"titulo":"Verso"}]}');
+    expect(r).toEqual([
+      { titulo: 'Capa', descricao: 'fundo branco' },
+      { titulo: 'Verso', descricao: '' },
+    ]);
+  });
+  it('vazio quando ilegível', () => {
+    expect(lerRoteiroFotos('não é json')).toEqual([]);
+  });
+});
+
+describe('GET /api/anuncios/categoria — escolha por IA', () => {
+  function stubDomain(anthropicText: string | null) {
+    return vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/domain_discovery/search')) {
+        return responseBody([
+          { category_id: 'MLB1743', category_name: 'Pedais', domain_name: 'Pedais de Efeito' },
+          { category_id: 'MLB1748', category_name: 'Amplificadores', domain_name: 'Amplificadores' },
+        ]);
+      }
+      if (u.includes('api.anthropic.com') && anthropicText !== null) return claude(anthropicText);
+      throw new Error(`inesperado: ${u}`);
+    });
+  }
+
+  it('com ANTHROPIC_API_KEY: devolve `escolha` apontando um id da lista', async () => {
+    process.env.ANTHROPIC_API_KEY = 'k';
+    injetarCliente(() => makeFakeSupabase({ contas: [conta()] }).client as never);
+    vi.stubGlobal('fetch', stubDomain('{"category_id":"MLB1743","motivo":"é um pedal de efeito"}'));
+
+    const res = await categoriaGET(new Request('http://local/api/anuncios/categoria?q=pedal+overdrive&seller_id=2490900'));
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.sugestoes).toHaveLength(2);
+    expect(json.escolha).toEqual({ category_id: 'MLB1743', motivo: 'é um pedal de efeito' });
+  });
+
+  it('sem ANTHROPIC_API_KEY: `escolha` é null e as sugestões continuam', async () => {
+    injetarCliente(() => makeFakeSupabase({ contas: [conta()] }).client as never);
+    vi.stubGlobal('fetch', stubDomain(null));
+
+    const res = await categoriaGET(new Request('http://local/api/anuncios/categoria?q=pedal+overdrive&seller_id=2490900'));
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.escolha).toBeNull();
+    expect(json.sugestoes).toHaveLength(2);
+  });
+
+  it('IA que devolve id inválido não vira escolha', async () => {
+    process.env.ANTHROPIC_API_KEY = 'k';
+    injetarCliente(() => makeFakeSupabase({ contas: [conta()] }).client as never);
+    vi.stubGlobal('fetch', stubDomain('{"category_id":"MLB9999","motivo":"chutei"}'));
+
+    const res = await categoriaGET(new Request('http://local/api/anuncios/categoria?q=x+y+z&seller_id=2490900'));
+    const json = await res.json();
+    expect(json.escolha).toBeNull();
+  });
+});
+
+describe('POST /api/anuncios/ia', () => {
+  it('acao "descricao": devolve { sugestao } limpa (sem HTML)', async () => {
+    process.env.ANTHROPIC_API_KEY = 'k';
+    vi.stubGlobal('fetch', vi.fn(async () => claude('<p>Descrição do produto</p>\n\nSegundo parágrafo.')));
+
+    const res = await iaPOST(
+      new Request('http://local', {
+        method: 'POST',
+        body: JSON.stringify({ acao: 'descricao', titulo: 'Pedal Overdrive XYZ', marca: 'XYZ', modelo: 'OD-1' }),
+      }),
+    );
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.sugestao).toBe('Descrição do produto\n\nSegundo parágrafo.');
+  });
+
+  it('acao "roteiro-fotos": devolve { fotos }', async () => {
+    process.env.ANTHROPIC_API_KEY = 'k';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => claude('{"fotos":[{"titulo":"Capa","descricao":"fundo branco"}]}')),
+    );
+
+    const res = await iaPOST(
+      new Request('http://local', {
+        method: 'POST',
+        body: JSON.stringify({ acao: 'roteiro-fotos', titulo: 'Pedal Overdrive XYZ' }),
+      }),
+    );
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.fotos).toEqual([{ titulo: 'Capa', descricao: 'fundo branco' }]);
+  });
+
+  it('acao inválida e título curto → 400 sem chamar a IA', async () => {
+    const fetchMock = vi.fn(async () => claude('x'));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const r1 = await iaPOST(new Request('http://local', { method: 'POST', body: JSON.stringify({ acao: 'nada', titulo: 'Produto XYZ' }) }));
+    const r2 = await iaPOST(new Request('http://local', { method: 'POST', body: JSON.stringify({ acao: 'descricao', titulo: 'ab' }) }));
+    expect(r1.status).toBe(400);
+    expect(r2.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sem ANTHROPIC_API_KEY → 503', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => claude('x')));
+    const res = await iaPOST(
+      new Request('http://local', { method: 'POST', body: JSON.stringify({ acao: 'descricao', titulo: 'Pedal Overdrive XYZ' }) }),
+    );
+    expect(res.status).toBe(503);
+  });
+});

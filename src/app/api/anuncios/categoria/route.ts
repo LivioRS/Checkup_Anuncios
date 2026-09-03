@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { comConta, MlError, mlFetch } from '@/lib/ml/client';
+import { temIA, perguntarAoClaude, promptEscolhaCategoria, lerEscolhaCategoria } from '@/lib/ia';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,9 +12,10 @@ type DomainHit = {
 };
 
 /**
- * Sugere `category_id` a partir do título do produto (plano 029) — SOMENTE LEITURA. Usa o
- * `domain_discovery` do ML, o mesmo motor que a criação de anúncio na interface deles usa pra
- * adivinhar a categoria. O vendedor confere/troca antes de criar.
+ * Sugere `category_id` a partir do título do produto (plano 029) — SOMENTE LEITURA. O
+ * `domain_discovery` do ML (mesmo motor da interface deles) dá a lista de candidatos VÁLIDOS; se
+ * houver `ANTHROPIC_API_KEY`, o Claude escolhe o melhor da lista e explica (plano 030). A escolha
+ * da IA é best-effort — se ela falhar, `sugestoes` continua respondendo normalmente.
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -39,7 +41,30 @@ export async function GET(req: Request) {
 
   try {
     const sugestoes = sellerId ? await comConta(sellerId, buscar) : await buscar();
-    return NextResponse.json({ sugestoes });
+
+    let escolha: { category_id: string; motivo: string } | null = null;
+    if (temIA() && sugestoes.length > 1) {
+      try {
+        const bruto = await perguntarAoClaude(
+          promptEscolhaCategoria(
+            q,
+            sugestoes.map((s) => ({
+              category_id: s.category_id!,
+              category_name: s.category_name ?? s.domain_name ?? '',
+            })),
+          ),
+          500,
+        );
+        escolha = lerEscolhaCategoria(
+          bruto,
+          sugestoes.map((s) => s.category_id!),
+        );
+      } catch {
+        /* escolha da IA é best-effort — segue sem destaque */
+      }
+    }
+
+    return NextResponse.json({ sugestoes, escolha });
   } catch (e) {
     const status = e instanceof MlError ? e.status : 500;
     return NextResponse.json({ erro: e instanceof Error ? e.message : String(e) }, { status });

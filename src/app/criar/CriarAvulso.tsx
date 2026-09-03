@@ -38,6 +38,10 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
 
   const [sugerindo, setSugerindo] = useState(false);
   const [sugestoes, setSugestoes] = useState<Sugestao[] | null>(null);
+  const [escolhaIa, setEscolhaIa] = useState<{ category_id: string; motivo: string } | null>(null);
+  const [roteiroFotos, setRoteiroFotos] = useState<{ titulo: string; descricao: string }[] | null>(null);
+  const [iaCarregando, setIaCarregando] = useState<'descricao' | 'roteiro-fotos' | null>(null);
+  const [iaErro, setIaErro] = useState<string | null>(null);
   const [criando, setCriando] = useState(false);
   const [resultado, setResultado] = useState<
     | { ok: true; id?: string; permalink?: string; erroDescricao?: unknown }
@@ -62,10 +66,14 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
     !!modelo.trim() &&
     fotos.length >= 1;
 
+  const categoriaNome =
+    sugestoes?.find((s) => s.category_id === categoryId.trim())?.category_name ?? undefined;
+
   async function sugerirCategoria() {
     if (titulo.trim().length < 3) return;
     setSugerindo(true);
     setSugestoes(null);
+    setEscolhaIa(null);
     try {
       const p = new URLSearchParams({ q: titulo.trim(), seller_id: sellerId });
       const res = await fetch(`/api/anuncios/categoria?${p}`);
@@ -75,11 +83,49 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
         return;
       }
       setSugestoes(json.sugestoes ?? []);
-      if (json.sugestoes?.[0]?.category_id) setCategoryId(json.sugestoes[0].category_id);
+      setEscolhaIa(json.escolha ?? null);
+      // A IA escolhe se puder; senão, o primeiro do preditor do ML.
+      const alvo = json.escolha?.category_id ?? json.sugestoes?.[0]?.category_id;
+      if (alvo) setCategoryId(alvo);
     } catch {
       setSugestoes([]);
     } finally {
       setSugerindo(false);
+    }
+  }
+
+  async function chamarIa(acao: 'descricao' | 'roteiro-fotos') {
+    if (titulo.trim().length < 5) return;
+    if (acao === 'descricao' && descricao.trim() && !window.confirm('Substituir a descrição atual pelo texto gerado?')) {
+      return;
+    }
+    setIaCarregando(acao);
+    setIaErro(null);
+    try {
+      const res = await fetch('/api/anuncios/ia', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          acao,
+          titulo: titulo.trim(),
+          marca: marca.trim(),
+          modelo: modelo.trim(),
+          category_id: categoryId.trim(),
+          category_nome: categoriaNome,
+          tem_fotos: fotos.length > 0,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setIaErro(json?.erro ?? 'A IA não respondeu.');
+        return;
+      }
+      if (acao === 'descricao') setDescricao(json.sugestao ?? '');
+      else setRoteiroFotos(json.fotos ?? []);
+    } catch (e) {
+      setIaErro(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIaCarregando(null);
     }
   }
 
@@ -127,7 +173,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
   return (
     <>
       <Secao titulo="1. Produto">
-        <div className="campo">
+        <div className="campo pilha">
           <div className="rot">Conta</div>
           <div className="ctrl">
             <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
@@ -140,7 +186,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
           </div>
         </div>
 
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Título ({titulo.trim().length}/60)</div>
           <div className="ctrl">
             <input
@@ -153,7 +199,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
           </div>
         </div>
 
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Categoria</div>
           <div className="ctrl" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input
@@ -173,6 +219,18 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
             </button>
           </div>
         </div>
+        {escolhaIa ? (
+          <p style={{ margin: '8px 0 0' }}>
+            <button
+              type="button"
+              className="btn pequeno primary"
+              onClick={() => setCategoryId(escolhaIa.category_id)}
+            >
+              IA recomenda: {escolhaIa.category_id}
+            </button>{' '}
+            <small>{escolhaIa.motivo}</small>
+          </p>
+        ) : null}
         {sugestoes && sugestoes.length > 0 ? (
           <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {sugestoes.map((s) => (
@@ -192,19 +250,19 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
       </Secao>
 
       <Secao titulo="2. Ficha">
-        <div className="campo">
+        <div className="campo pilha">
           <div className="rot">Marca</div>
           <div className="ctrl">
             <input type="text" value={marca} onChange={(e) => setMarca(e.target.value)} />
           </div>
         </div>
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Modelo</div>
           <div className="ctrl">
             <input type="text" value={modelo} onChange={(e) => setModelo(e.target.value)} />
           </div>
         </div>
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">GTIN / EAN (deixe vazio se não tiver)</div>
           <div className="ctrl">
             <input
@@ -215,7 +273,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
             />
           </div>
         </div>
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Garantia</div>
           <div className="ctrl" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <select
@@ -239,7 +297,35 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
         </div>
       </Secao>
 
-      <Secao titulo="3. Fotos (URLs, uma por linha)">
+      <Secao
+        titulo="3. Fotos (URLs, uma por linha)"
+        acao={
+          <button
+            type="button"
+            className="btn pequeno"
+            onClick={() => chamarIa('roteiro-fotos')}
+            disabled={iaCarregando !== null || titulo.trim().length < 5}
+          >
+            {iaCarregando === 'roteiro-fotos' ? 'Gerando…' : 'Roteiro de fotos (IA)'}
+          </button>
+        }
+      >
+        {roteiroFotos && roteiroFotos.length > 0 ? (
+          <div className="card" style={{ marginBottom: 12 }}>
+            <small>
+              A IA <strong>não gera as fotos</strong> — o Mercado Livre exige foto real do
+              produto. Tire estas e cole as URLs abaixo:
+            </small>
+            <ol style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+              {roteiroFotos.map((f, i) => (
+                <li key={i} style={{ marginTop: 4 }}>
+                  <strong>{f.titulo}</strong>
+                  {f.descricao ? ` — ${f.descricao}` : ''}
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
         <div className="ctrl">
           <textarea
             rows={4}
@@ -256,7 +342,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
       </Secao>
 
       <Secao titulo="4. Preço, estoque, condição e tipo">
-        <div className="campo">
+        <div className="campo pilha">
           <div className="rot">Valor (R$)</div>
           <div className="ctrl">
             <input
@@ -268,7 +354,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
             />
           </div>
         </div>
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Quantidade</div>
           <div className="ctrl">
             <input
@@ -280,7 +366,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
             />
           </div>
         </div>
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Condição</div>
           <div className="ctrl">
             <select value={condicao} onChange={(e) => setCondicao(e.target.value as 'new' | 'used')}>
@@ -289,7 +375,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
             </select>
           </div>
         </div>
-        <div className="campo" style={campo}>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Tipo de anúncio</div>
           <div className="ctrl">
             <select
@@ -303,7 +389,19 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
         </div>
       </Secao>
 
-      <Secao titulo="5. Descrição (opcional)">
+      <Secao
+        titulo="5. Descrição (opcional)"
+        acao={
+          <button
+            type="button"
+            className="btn pequeno"
+            onClick={() => chamarIa('descricao')}
+            disabled={iaCarregando !== null || titulo.trim().length < 5}
+          >
+            {iaCarregando === 'descricao' ? 'Gerando…' : 'Gerar com IA'}
+          </button>
+        }
+      >
         <div className="ctrl">
           <textarea
             rows={6}
@@ -313,7 +411,17 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
             style={{ width: '100%', fontFamily: 'inherit', resize: 'vertical' }}
           />
         </div>
+        <small>
+          A IA se baseia só no título, marca, modelo e categoria — confira antes de publicar. Dá
+          pra refinar depois na tela de Descrição, com a ficha e as perguntas reais.
+        </small>
       </Secao>
+
+      {iaErro ? (
+        <p style={{ margin: '0 0 8px' }}>
+          <Selo nivel="atencao">IA</Selo> {iaErro}
+        </p>
+      ) : null}
 
       <p style={{ marginTop: 14 }}>
         <button className="btn primary" type="button" onClick={criar} disabled={criando || !podeCriar}>

@@ -491,6 +491,18 @@ textarea:disabled {
   opacity: 0.72;
 }
 
+/* O `.campo` padrão é rótulo-280px / valor — feito pra lista de largura cheia
+   (ficha técnica). Dentro de um `.grid` (colunas lado a lado do /criar) ou com
+   `.pilha` explícito, o rótulo de 280px não cabe e espreme o input pra um
+   fiapo — então empilha: rótulo em cima, controle embaixo. */
+.grid .campo,
+.campo.pilha {
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding: 0;
+  border-bottom: 0;
+}
+
 /* ---------- barra fixa de salvar ---------- */
 
 .salvar {
