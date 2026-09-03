@@ -48,6 +48,7 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 029  | Criar anúncio FORA do catálogo (produto sem PDP / lançamento) — era o fallback adiado do 019 | P1 | L | 019 | DONE (branch `feat/anuncio-fora-catalogo`) |
 | 030  | IA no anúncio fora do catálogo — descrição, escolha de categoria e roteiro de fotos | P1 | M | 029 | DONE (branch `feat/029-ia-avulso`) |
 | 031  | Provedor de IA plugável — OpenRouter OU Anthropic direto (sem plano próprio, mudança pequena) | P2 | S | — | DONE (branch `feat/openrouter-provider`) |
+| 032  | Enriquecer a ficha do anúncio avulso SEM agente — GTIN→catálogo (determinístico) + visão de um tiro sobre foto da etiqueta. Veredito do LLM Council. | P1 | M | 029, 030 | TODO (plano escrito — pronto pra executar) |
 
 ## Dependency notes
 
