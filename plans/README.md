@@ -46,6 +46,7 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 024  | Fila e worker assíncrono pra operações em lote (kanban "Do Anúncio ao Portal" f2c1) | P1 | M | 020 | DONE |
 | 025  | Estender o lote pra título/descrição, só geração — gravação continua manual/revisada (kanban "Do Anúncio ao Portal" f2c2) | P1 | M | 024 | DONE |
 | 029  | Criar anúncio FORA do catálogo (produto sem PDP / lançamento) — era o fallback adiado do 019 | P1 | L | 019 | DONE (branch `feat/anuncio-fora-catalogo`) |
+| 030  | IA no anúncio fora do catálogo — descrição, escolha de categoria e roteiro de fotos | P1 | M | 029 | DONE (branch `feat/029-ia-avulso`) |
 
 ## Dependency notes
 
@@ -424,3 +425,38 @@ upload de arquivo de imagem (só URL). Detalhado no fim de `plans/029-anuncio-fo
 ambiente (mesma natureza do teste manual pendente do 019).
 
 **Desvio do plano**: branch `feat/anuncio-fora-catalogo` a partir da `main` + commit + push + PR.
+
+## Status do 030 (2026-09-03, concluído)
+
+IA no fluxo do 029, a pedido do Livio. Decisão de produto (o Livio confirmou por
+`AskUserQuestion`): **imagens por IA = roteiro de fotos**, não geração de imagem — o ML exige
+foto real do produto; imagem gerada por IA viola a política deles e engana o comprador.
+
+**Arquivos criados**: `src/app/api/anuncios/ia/route.ts` (`POST { acao: 'descricao' |
+'roteiro-fotos', titulo, marca?, modelo?, category_id?, category_nome?, tem_fotos? }` — só fala
+com o Claude, não com o ML; sem `ANTHROPIC_API_KEY` devolve 503), `tests/anuncios-ia.test.ts`.
+
+**Arquivos editados**:
+- `src/lib/ia.ts` (motor, sem Supabase): `promptDescricaoNova` (descrição de produto que ainda
+  não existe — input enxuto, proíbe inventar), `promptEscolhaCategoria` + `lerEscolhaCategoria`
+  (o Claude escolhe UM `category_id` de uma LISTA fixa — a do `domain_discovery` — e
+  `lerEscolhaCategoria` descarta id fora da lista, anti-alucinação), `promptRoteiroFotos` +
+  `lerRoteiroFotos`.
+- `src/app/api/anuncios/categoria/route.ts` (029): depois do `domain_discovery`, se
+  `temIA()` e houver > 1 candidato, o Claude escolhe o melhor → `{ sugestoes, escolha }`.
+  Best-effort: Claude falhando NÃO derruba a resposta (STOP condition do plano). Compatível —
+  quem consumia `{ sugestoes }` continua.
+- `src/app/criar/CriarAvulso.tsx`: botão "IA recomenda: MLBxxx — <motivo>" na categoria; botão
+  "Roteiro de fotos (IA)" que lista o que fotografar (com o aviso "a IA não gera as fotos");
+  botão "Gerar com IA" na descrição (confirma antes de sobrescrever texto digitado).
+
+**Gate completo (AGENTS.md)**: `build` / `lint` / `verificar` / `test` — verdes, **76/76**
+(64 + 12 novos). `tests/anuncios-avulso.test.ts` e `tests/anuncios.test.ts` seguem 100% verdes.
+
+**Não testado**: contra o Claude/ML de verdade — sem `ANTHROPIC_API_KEY`/`ML_CLIENT_ID` neste
+ambiente. Fica pro Livio depois do deploy: abrir `/criar` → "Fora do catálogo", pôr um título,
+clicar em "Sugerir pelo título" (checa a escolha da IA), "Roteiro de fotos (IA)" e "Gerar com
+IA" na descrição.
+
+**Desvio do plano**: branch `feat/029-ia-avulso` empilhado sobre `feat/anuncio-fora-catalogo` +
+commit + push + PR.

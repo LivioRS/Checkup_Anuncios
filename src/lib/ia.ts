@@ -424,3 +424,129 @@ export function promptTitulo(c: ContextoTitulo) {
     'Em "descartados", liste os termos das listas que NÃO servem para este produto e por quê. Essa lista importa tanto quanto a dos títulos.',
   ].join('\n');
 }
+
+/* ------------------------------------------------------------------ *
+ * Anúncio fora do catálogo (planos 029/030): produto que ainda não
+ * existe — sem ficha, sem perguntas reais, sem avaliações. Prompts
+ * enxutos, baseados só em título/marca/modelo/categoria.
+ * ------------------------------------------------------------------ */
+
+export type ContextoProdutoNovo = {
+  titulo: string;
+  marca?: string;
+  modelo?: string;
+  /** Nome legível da categoria, quando já escolhida. */
+  categoria?: string;
+  temFotos?: boolean;
+};
+
+/** Descrição para um produto que está sendo cadastrado agora (não há item no ML ainda). */
+export function promptDescricaoNova(c: ContextoProdutoNovo): string {
+  return [
+    'Você escreve descrições de anúncio do Mercado Livre no Brasil. Escreva a descrição de um produto que está sendo cadastrado agora.',
+    '',
+    'REGRAS OBRIGATÓRIAS:',
+    '- Responda APENAS com o texto final da descrição: sem comentário seu, sem introdução, sem marcação.',
+    '- Texto simples puro: nada de HTML, markdown, asterisco, emoji ou tabela. Blocos separados por linha em branco.',
+    '- Você só tem título, marca, modelo e categoria. NÃO invente especificação, medida, material, compatibilidade, conteúdo da caixa nem prazo. Se um dado não aparece, não escreva sobre ele.',
+    '- Proibido: link, telefone, e-mail, WhatsApp, endereço, menção a outro site ou marketplace.',
+    '- Nada de superlativo vazio ("o melhor do mercado") nem promessa de entrega.',
+    '- Entre 800 e 2500 caracteres — é uma descrição de lançamento, ainda enxuta.',
+    '',
+    'COMO O TEXTO DEVE SOAR:',
+    '- Fale com o comprador: "você recebe", "serve para". Comece com uma frase que nomeia o produto por inteiro e diz para quem ele é.',
+    '- Títulos de seção são frases curtas de benefício, não rótulos genéricos.',
+    '- Feche com um bloco "Perguntas Frequentes" (3 a 5 perguntas entre aspas) atacando objeções gerais de quem compra um lançamento: é original, como funciona a garantia, serve para iniciante/uso profissional. Responda começando com "Sim." / "Serve." e só o que dá pra afirmar sem inventar.',
+    '- Termine com uma linha curta de fechamento.',
+    '',
+    `TÍTULO: ${c.titulo}`,
+    c.marca ? `MARCA: ${c.marca}` : '',
+    c.modelo ? `MODELO: ${c.modelo}` : '',
+    c.categoria ? `CATEGORIA: ${c.categoria}` : '',
+    c.temFotos ? 'O anúncio terá fotos — NÃO descreva o que aparece nelas, você não as viu.' : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * Escolhe a melhor categoria de uma LISTA fixa (a do `domain_discovery` do ML). O Claude não
+ * inventa `category_id` — ele só pode devolver um dos que foram passados.
+ */
+export function promptEscolhaCategoria(
+  titulo: string,
+  candidatos: { category_id: string; category_name: string }[],
+): string {
+  return [
+    'Você classifica produtos em categorias do Mercado Livre Brasil.',
+    '',
+    `PRODUTO (título): ${titulo}`,
+    '',
+    'CATEGORIAS CANDIDATAS (o preditor do Mercado Livre sugeriu estas — só pode escolher UMA delas):',
+    ...candidatos.map((c) => `- ${c.category_id}: ${c.category_name}`),
+    '',
+    'Escolha a que MELHOR descreve este produto exato. Se estiver em dúvida entre duas, prefira a mais específica.',
+    '',
+    'RESPONDA SÓ COM ESTE JSON, sem texto antes ou depois:',
+    '{"category_id":"<um id EXATAMENTE como está na lista>","motivo":"por que esta, em 1 frase"}',
+  ].join('\n');
+}
+
+/** Lê a escolha de categoria. Descarta se o id não estiver entre os válidos (anti-alucinação). */
+export function lerEscolhaCategoria(
+  bruto: string,
+  idsValidos: string[],
+): { category_id: string; motivo: string } | null {
+  const limpo = bruto.replace(/```(?:json)?/g, '').trim();
+  const inicio = limpo.indexOf('{');
+  const fim = limpo.lastIndexOf('}');
+  if (inicio < 0 || fim < inicio) return null;
+  try {
+    const o = JSON.parse(limpo.slice(inicio, fim + 1)) as { category_id?: unknown; motivo?: unknown };
+    const id = typeof o.category_id === 'string' ? o.category_id.trim() : '';
+    if (!id || !idsValidos.includes(id)) return null;
+    return { category_id: id, motivo: typeof o.motivo === 'string' ? o.motivo : '' };
+  } catch {
+    return null;
+  }
+}
+
+/** Roteiro do que fotografar — a IA NÃO gera imagem (o ML exige foto real do produto). */
+export function promptRoteiroFotos(c: ContextoProdutoNovo): string {
+  return [
+    'Você orienta vendedores do Mercado Livre a fotografar um produto para o anúncio.',
+    '',
+    `PRODUTO: ${c.titulo}`,
+    c.marca ? `MARCA: ${c.marca}` : '',
+    c.modelo ? `MODELO: ${c.modelo}` : '',
+    c.categoria ? `CATEGORIA: ${c.categoria}` : '',
+    '',
+    'Monte um roteiro de 5 a 8 fotos para este produto, na ordem em que devem aparecer no anúncio. Comece SEMPRE pela capa com fundo branco. Inclua ângulos (frente, verso, lateral), um detalhe de material/acabamento, uma foto de escala/tamanho (com referência), uma de uso real quando fizer sentido, e uma do que acompanha (caixa/acessórios) se o produto costuma vir com itens.',
+    '',
+    'RESPONDA SÓ COM ESTE JSON, sem texto antes ou depois:',
+    '{"fotos":[{"titulo":"nome curto da foto","descricao":"o que enquadrar, 1 frase objetiva"}]}',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** Lê o roteiro de fotos. Lista vazia se ilegível. */
+export function lerRoteiroFotos(bruto: string): { titulo: string; descricao: string }[] {
+  const limpo = bruto.replace(/```(?:json)?/g, '').trim();
+  const inicio = limpo.indexOf('{');
+  const fim = limpo.lastIndexOf('}');
+  if (inicio < 0 || fim < inicio) return [];
+  try {
+    const o = JSON.parse(limpo.slice(inicio, fim + 1)) as { fotos?: unknown };
+    const lista = Array.isArray(o.fotos) ? o.fotos : [];
+    return lista
+      .map((f) => f as { titulo?: unknown; descricao?: unknown })
+      .filter((f) => typeof f.titulo === 'string' && (f.titulo as string).trim())
+      .map((f) => ({
+        titulo: (f.titulo as string).trim(),
+        descricao: typeof f.descricao === 'string' ? f.descricao.trim() : '',
+      }));
+  } catch {
+    return [];
+  }
+}
