@@ -74,6 +74,7 @@ describe('POST /api/anuncios/avulso', () => {
 
     expect(enviado).toMatchObject({
       title: 'Pedal de Guitarra Overdrive XYZ Tube Screamer',
+      family_name: 'Pedal de Guitarra Overdrive XYZ Tube Screamer',
       category_id: 'MLB9999',
       price: 349.9,
       currency_id: 'BRL',
@@ -83,6 +84,7 @@ describe('POST /api/anuncios/avulso', () => {
       condition: 'new',
       status: 'paused',
     });
+    expect((enviado!.family_name as string).length).toBeLessThanOrEqual(60);
     expect(enviado).not.toHaveProperty('catalog_listing');
     // URL inválida é descartada; sobram 2 fotos.
     expect((enviado!.pictures as unknown[])).toEqual([
