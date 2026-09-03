@@ -296,3 +296,51 @@ describe('POST /api/anuncios/ia — acao "ficha-da-foto"', () => {
     expect(res.status).toBe(503);
   });
 });
+
+describe('retry em 429 (modelo :free do OpenRouter)', () => {
+  it('429 → espera e re-tenta; 429-429-200 devolve sucesso', async () => {
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
+    process.env.OPENROUTER_MODEL = 'x/y:free';
+
+    let n = 0;
+    const fetchMock = vi.fn(async () => {
+      n += 1;
+      if (n < 3) {
+        return new Response(JSON.stringify({ error: { message: 'rate limited' } }), {
+          status: 429,
+          headers: { 'content-type': 'application/json', 'retry-after': '0.001' },
+        });
+      }
+      return responseBody({ choices: [{ message: { content: 'Descrição.' } }] });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await iaPOST(
+      new Request('http://local', { method: 'POST', body: JSON.stringify({ acao: 'descricao', titulo: 'Pedal Overdrive XYZ' }) }),
+    );
+    expect(res.status).toBe(200);
+    expect(n).toBe(3);
+    expect((await res.json()).sugestao).toBe('Descrição.');
+  });
+
+  it('429 persistente → erro 502 com dica sobre modelo :free', async () => {
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
+    process.env.OPENROUTER_MODEL = 'x/y:free';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        new Response(JSON.stringify({ error: { message: 'rate limited' } }), {
+          status: 429,
+          headers: { 'content-type': 'application/json', 'retry-after': '0.001' },
+        }),
+      ),
+    );
+
+    const res = await iaPOST(
+      new Request('http://local', { method: 'POST', body: JSON.stringify({ acao: 'descricao', titulo: 'Pedal Overdrive XYZ' }) }),
+    );
+    const json = await res.json();
+    expect(res.status).toBe(502);
+    expect(json.erro).toMatch(/gr[áa]tis|free|429/i);
+  });
+});
