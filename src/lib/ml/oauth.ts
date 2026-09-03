@@ -43,6 +43,37 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenRes
   return json as TokenResponse;
 }
 
+/**
+ * Refresh do token de uma conta ML de CLIENTE do portal (plano 028, f3c2). Igual ao de cima,
+ * mas com as credenciais do app do PORTAL (`ML_CLIENT_ID_PORTAL`/`ML_CLIENT_SECRET_PORTAL`) —
+ * app separado do dos robôs (ver AGENTS.md §1). O `refresh_token` continua de uso único: quem
+ * chama grava o par novo na mesma linha de `contas_ml_clientes` na hora.
+ */
+export async function refreshAccessTokenPortal(refreshToken: string): Promise<TokenResponse> {
+  const res = await fetch(`${ML_API}/oauth/token`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: env.clientIdPortal,
+      client_secret: env.clientSecretPortal,
+      refresh_token: refreshToken,
+    }).toString(),
+    cache: 'no-store',
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(
+      `OAuth ${res.status}: ${json?.error ?? ''} ${json?.error_description ?? JSON.stringify(json)}`,
+    );
+  }
+  return json as TokenResponse;
+}
+
 const ML_AUTH = 'https://auth.mercadolivre.com.br';
 
 /**

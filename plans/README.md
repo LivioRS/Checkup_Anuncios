@@ -46,7 +46,8 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 024  | Fila e worker assíncrono pra operações em lote (kanban "Do Anúncio ao Portal" f2c1) | P1 | M | 020 | DONE |
 | 025  | Estender o lote pra título/descrição, só geração — gravação continua manual/revisada (kanban "Do Anúncio ao Portal" f2c2) | P1 | M | 024 | DONE |
 | 026  | Tela de progresso do lote — criar/acompanhar pela UI, tique-taque, "repetir o que falhou" (kanban "Do Anúncio ao Portal" f2c3) | P1 | M | 024, 025 | DONE (branch `feat/f2c3-tela-progresso-lote`) |
-| 027  | Roteiro da Fase 3 (portal público) + f3c0 (bug middleware) + f3c1 (cliente conecta a própria conta ML) | P1 | L | 022, 023 | ROTEIRO + f3c0/f3c1 DONE; f3c2+ aguardam decisões |
+| 027  | Roteiro da Fase 3 (portal público) + f3c0 (bug middleware) + f3c1 (cliente conecta a própria conta ML) | P1 | L | 022, 023 | ROTEIRO + f3c0/f3c1 DONE; f3c2 DONE (028); f3c3+ aguardam decisões |
+| 028  | Camada de token pra conta ML de cliente do portal — `comContaCliente`, refresh de uso único em `contas_ml_clientes` (kanban Fase 3, f3c2) | P1 | L | 027 | DONE (branch `feat/f3c2-token-cliente` — §1, NÃO mergear sem revisão) |
 | 029  | Criar anúncio FORA do catálogo (produto sem PDP / lançamento) — era o fallback adiado do 019 | P1 | L | 019 | DONE (branch `feat/anuncio-fora-catalogo`) |
 | 030  | IA no anúncio fora do catálogo — descrição, escolha de categoria e roteiro de fotos | P1 | M | 029 | DONE (branch `feat/029-ia-avulso`) |
 | 031  | Provedor de IA plugável — OpenRouter OU Anthropic direto (sem plano próprio, mudança pequena) | P2 | S | — | DONE (branch `feat/openrouter-provider`) |
@@ -595,3 +596,40 @@ plano 023 também deixou pendente.
 
 **Desvio do plano**: branch `feat/fase3-conectar-conta` a partir da `main` (já com o PR #1
 mergeado) + commit + push + PR.
+
+## Status do 028 (2026-09-03, DONE — §1, não mergear sem revisão)
+
+O Livio delegou as 5 decisões de produto do roteiro ("escolha as melhores práticas"). As
+tomadas e usadas neste plano: **#4** — cliente opera só nas contas ML que ele conectou
+(`contas_ml_clientes` com o `cliente_id` dele); **#5** — no portal, título/descrição continuam
+"só geração", gravação revisada um a um (igual plano 025). As outras (#1 convite-only, #2
+cobrança depois, #3 branding sem subdomínio) viram f3c4/f3c5/f3c6 — registradas no `plans/027`.
+
+**Um pipeline de token só.** `src/lib/ml/client.ts` agora serve os dois universos: o `escopo`
+(`AsyncLocalStorage`) carrega `universo: 'robos' | 'cliente'`. `comConta` = robôs (`contas`);
+`comContaCliente(clienteId, sellerId, fn)` = portal (`contas_ml_clientes`). `getAccount` e
+`refrescarUmaVez` ramificam; `mlFetch`/`validToken` intocados. Motivo de não duplicar num
+`mlFetchCliente`: o motor (§11) chama `mlFetch` daqui e precisa funcionar pros dois sem
+refatoração; dois refresh divergentes reintroduziriam a corrida do §1.
+
+**Arquivos**: `src/lib/ml/oauth.ts` (+ `refreshAccessTokenPortal` — cópia do refresh dos robôs
+com credenciais do app do portal), `src/lib/ml/client.ts` (`comContaCliente`, `contaDoCliente`,
+`saveTokensCliente`, ramos de `universo` em `getAccount`/`refrescarUmaVez`, dedup chaveado por
+`${universo}:${sellerId}`), `AGENTS.md §1`, `plans/README.md`. `tests/token-cliente.test.ts`
+(novo, 5 testes — espelho do `token-flow.test.ts`: token válido; renova com credenciais do
+PORTAL e grava na linha de `contas_ml_clientes`; 401 → 1 retry; refresh concorrente = 1
+renovação + 1 gravação; sem escopo de cliente `getAccount` continua nos robôs).
+
+**Gate completo (AGENTS.md)**: `build` / `lint` / `verificar` / `test` — verdes, **69/69**
+(64 + 5 novos). `tests/token-flow.test.ts` (caminho dos robôs) roda junto e **continua 100%
+verde, sem alteração** — era a STOP condition principal.
+
+**Nada de schema neste card.** `lotes.cliente_id` + policies de RLS de `lotes`/`lote_itens` +
+as rotas/telas `/portal/lote*` são o f3c3, que depende desta revisão.
+
+**Não testado**: chamar o ML de verdade com um token de cliente real — sem `ML_CLIENT_ID_PORTAL`
+nem conexão de cliente neste ambiente (mesma natureza do teste manual pendente dos planos
+022/023/027).
+
+**Desvio do plano**: branch `feat/f3c2-token-cliente` empilhado sobre `feat/fase3-conectar-conta`
++ commit + push + PR. **Não mergear sem revisão humana — é o §1.**
