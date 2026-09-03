@@ -47,16 +47,50 @@ export function temIA() {
 }
 
 export async function perguntarAoClaude(prompt: string, maxTokens = 2000): Promise<string> {
+  return despacharIA(prompt, maxTokens);
+}
+
+/**
+ * Igual a `perguntarAoClaude`, mas com uma imagem no prompt (plano 032, Parte B) — pra ler a
+ * ficha técnica de uma foto de etiqueta/manual. `imagemUrl` tem de ser http(s). Mesmo despacho
+ * de provedor; o formato do bloco de imagem muda entre OpenRouter (OpenAI-compat) e Anthropic.
+ */
+export async function perguntarComImagem(
+  prompt: string,
+  imagemUrl: string,
+  maxTokens = 1500,
+): Promise<string> {
+  if (!/^https?:\/\/\S+$/i.test(imagemUrl)) {
+    throw new Error('URL de imagem inválida (precisa ser http/https).');
+  }
   if (process.env.OPENROUTER_API_KEY) {
-    return perguntarViaOpenRouter(prompt, maxTokens);
+    return perguntarViaOpenRouter(
+      [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: imagemUrl } },
+      ],
+      maxTokens,
+    );
   }
   if (process.env.ANTHROPIC_API_KEY) {
-    return perguntarViaAnthropic(prompt, maxTokens);
+    return perguntarViaAnthropic(
+      [
+        { type: 'text', text: prompt },
+        { type: 'image', source: { type: 'url', url: imagemUrl } },
+      ],
+      maxTokens,
+    );
   }
   throw new Error('Nenhuma IA configurada — defina OPENROUTER_API_KEY ou ANTHROPIC_API_KEY no .env.local');
 }
 
-async function perguntarViaAnthropic(prompt: string, maxTokens: number): Promise<string> {
+function despacharIA(content: unknown, maxTokens: number): Promise<string> {
+  if (process.env.OPENROUTER_API_KEY) return perguntarViaOpenRouter(content, maxTokens);
+  if (process.env.ANTHROPIC_API_KEY) return perguntarViaAnthropic(content, maxTokens);
+  throw new Error('Nenhuma IA configurada — defina OPENROUTER_API_KEY ou ANTHROPIC_API_KEY no .env.local');
+}
+
+async function perguntarViaAnthropic(content: unknown, maxTokens: number): Promise<string> {
   // Se o modelo sair de linha, troque em ANTHROPIC_MODEL.
   // Lista atual: https://docs.claude.com/en/docs/about-claude/models
   const modelo = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
@@ -71,7 +105,7 @@ async function perguntarViaAnthropic(prompt: string, maxTokens: number): Promise
     body: JSON.stringify({
       model: modelo,
       max_tokens: maxTokens,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content }],
     }),
     cache: 'no-store',
   });
@@ -90,7 +124,7 @@ async function perguntarViaAnthropic(prompt: string, maxTokens: number): Promise
     .trim();
 }
 
-async function perguntarViaOpenRouter(prompt: string, maxTokens: number): Promise<string> {
+async function perguntarViaOpenRouter(content: unknown, maxTokens: number): Promise<string> {
   const modelo = process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
 
   const res = await fetch(OPENROUTER_API, {
@@ -104,7 +138,7 @@ async function perguntarViaOpenRouter(prompt: string, maxTokens: number): Promis
     body: JSON.stringify({
       model: modelo,
       max_tokens: maxTokens,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content }],
     }),
     cache: 'no-store',
   });
@@ -590,5 +624,53 @@ export function lerRoteiroFotos(bruto: string): { titulo: string; descricao: str
       }));
   } catch {
     return [];
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Ficha técnica a partir de uma FOTO (plano 032, Parte B). A IA lê o
+ * que está legível numa etiqueta/manual/caixa — não completa, não
+ * deduz. É sugestão pro Livio revisar e mapear pros atributos do ML.
+ * ------------------------------------------------------------------ */
+
+export function promptFichaDaFoto(): string {
+  return [
+    'Você recebe a foto de uma etiqueta de especificação, um manual ou a caixa de um produto.',
+    '',
+    'Extraia SÓ o que está LEGÍVEL na imagem. NÃO complete, NÃO deduza, NÃO invente. Se um campo',
+    'não está legível ou não aparece, simplesmente não inclua.',
+    '',
+    'RESPONDA SÓ COM ESTE JSON, sem texto antes ou depois:',
+    '{"titulo_sugerido":"nome do produto se aparecer, senão string vazia","atributos":[{"nome":"campo","valor":"valor lido"}]}',
+  ].join('\n');
+}
+
+/** Lê a ficha extraída da foto. `atributos` vazio se ilegível. */
+export function lerFichaDaFoto(bruto: string): {
+  tituloSugerido: string;
+  atributos: { nome: string; valor: string }[];
+} {
+  const limpo = bruto.replace(/```(?:json)?/g, '').trim();
+  const inicio = limpo.indexOf('{');
+  const fim = limpo.lastIndexOf('}');
+  if (inicio < 0 || fim < inicio) return { tituloSugerido: '', atributos: [] };
+  try {
+    const o = JSON.parse(limpo.slice(inicio, fim + 1)) as {
+      titulo_sugerido?: unknown;
+      atributos?: unknown;
+    };
+    const lista = Array.isArray(o.atributos) ? o.atributos : [];
+    return {
+      tituloSugerido: typeof o.titulo_sugerido === 'string' ? o.titulo_sugerido.trim() : '',
+      atributos: lista
+        .map((a) => a as { nome?: unknown; valor?: unknown })
+        .filter((a) => typeof a.nome === 'string' && (a.nome as string).trim())
+        .map((a) => ({
+          nome: (a.nome as string).trim(),
+          valor: typeof a.valor === 'string' ? a.valor.trim() : '',
+        })),
+    };
+  } catch {
+    return { tituloSugerido: '', atributos: [] };
   }
 }
