@@ -702,3 +702,39 @@ lote (segue a decisão do 025).
 
 **Desvio do plano**: os merges de 027/028 na `main` não foram feitos (ver acima); ficam pro
 Livio via PR, com 028 revisado à mão por ser §1.
+
+## Status do 026 (2026-09-03, concluído)
+
+Implementado seguindo o "Desenho" do plano. Só ADIÇÃO — nenhuma função existente de
+`fila.ts`/`processar` foi tocada.
+
+**Arquivos criados**: `src/app/lote/page.tsx` + `src/app/lote/CriarLote.tsx` (criar lote pela UI:
+conta + tipo + textarea de códigos, com extração de `MLB\d+` de links colados),
+`src/app/lote/[id]/page.tsx` + `src/app/lote/[id]/AcompanharLote.tsx` (progresso: `Medidor`
+concluídos/total, selos por status, "tique-taque" via `setTimeout` chamando
+`POST /api/lote/[id]/processar` a cada ~900ms com Pausar/Retomar, tabela de itens com
+`<details>` por resultado, botão "reenfileirar os que falharam"),
+`src/app/api/lote/[id]/itens/route.ts` (`GET` → `{ itens }`),
+`src/app/api/lote/[id]/reenfileirar/route.ts` (`POST` → `{ reenfileirados, lote }`),
+`tests/lote-tela.test.ts`.
+
+**Arquivos editados**: `src/lib/lotes/fila.ts` (2 funções novas: `listarItensDoLote`,
+`reenfileirarErros` — loop `update` por `id`, mesmo padrão de `proximosPendentes`, pra funcionar
+com o fake e o cliente Supabase deste repo), `src/app/layout.tsx` (1 link "Lote" no nav),
+`README.md`, `plans/README.md`.
+
+**Gate completo do AGENTS.md**:
+
+- `npm run build` — completo; `/lote`, `/lote/[id]`, `/api/lote/[id]/itens`,
+  `/api/lote/[id]/reenfileirar` na tabela de rotas; typecheck limpo.
+- `npm run lint` — 0 erro; nenhum warning novo (os arquivos novos saem limpos).
+- `npm run verificar` — OK, mesma saída.
+- `npm test` — **65/65** (58 de antes + 7 novos de `tests/lote-tela.test.ts`: `listarItensDoLote`,
+  `reenfileirarErros` nos 2 ramos, e os 2 endpoints novos com 200 + 404).
+
+**Não verificado nesta passada** (precisa de token real do ML + deploy): a tela rodando de
+verdade — criar um lote pela UI e ver o "tique-taque" preencher a barra. O componente React não
+tem teste unitário (o repo não usa React Testing Library; padrão é testar lógica/rotas).
+
+**Desvio do plano**: nenhum — branch (`feat/f2c3-tela-progresso-lote`, empilhado sobre o do 025)
++ commit + push + PR.

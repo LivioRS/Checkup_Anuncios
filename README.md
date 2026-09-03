@@ -170,12 +170,15 @@ carrega `origem: 'admin' | 'portal'` pra o callback único voltar pra `/clientes
 `/portal/painel`. O plano 027 também corrigiu o middleware, que mandava `/api/portal/*` pro gate
 do `PANEL_PASSWORD` em vez do gate de sessão do portal (f3c0).
 
-**Fila de lote (plano 024, card f2c1; plano 025, card f2c2).** `lotes`/`lote_itens` guardam
-operações em massa. `POST /api/lote` cria o lote; `POST /api/lote/[id]/processar` é o worker —
-processa um punhado de itens pendentes por chamada e devolve o estado. Não é um cron: a Vercel no
-plano Hobby só permite cron 1x/dia, então o "tique-taque" é de quem chama o worker repetidamente
-(a tela de progresso do card f2c3 vai fazer isso; até lá, é chamada manual). `429` do ML devolve
-o item pra fila em vez de derrubar o lote inteiro; outros erros ficam isolados naquele item.
+**Fila de lote (plano 024, card f2c1; plano 025, card f2c2; plano 026, card f2c3).**
+`lotes`/`lote_itens` guardam operações em massa. `POST /api/lote` cria o lote;
+`POST /api/lote/[id]/processar` é o worker — processa um punhado de itens pendentes por chamada e
+devolve o estado. Não é um cron: a Vercel no plano Hobby só permite cron 1x/dia, então o
+"tique-taque" é de quem chama o worker repetidamente — a tela `/lote/[id]` (plano 026) faz isso
+sozinha com `setTimeout` enquanto o lote não está `concluido`, com Pausar/Retomar. `429` do ML
+devolve o item pra fila em vez de derrubar o lote inteiro; outros erros ficam isolados naquele
+item, e a tela tem "reenfileirar os que falharam" (`POST /api/lote/[id]/reenfileirar`, itens
+`erro` → `pendente`).
 
 `lotes.tipo` (plano 025) decide o que o worker roda em cada item, e o corpo do `POST` de
 `/api/lote` aceita `tipo` (default `'diagnostico'`, compatível com o 024):
@@ -189,7 +192,8 @@ o item pra fila em vez de derrubar o lote inteiro; outros erros ficam isolados n
 `/api/titulo/[id]` e `/api/descricao/[id]` — que é a mesma decisão de produto do `PRODUCT.md`
 ("reescrita assistida"). O `POST` dessas duas rotas virou um wrapper fino sobre as funções de
 motor; o JSON devolvido é idêntico ao de antes da extração (rede de regressão em
-`tests/lote-titulo-descricao.test.ts`). Sem UI própria ainda — a tela de lote é o card f2c3.
+`tests/lote-titulo-descricao.test.ts`). A tela pra criar e acompanhar o lote é `/lote` e
+`/lote/[id]` (plano 026, f2c3).
 
 ---
 
@@ -250,8 +254,9 @@ src/lib/ia.ts                         prompts e leitura das notas (Claude)
 src/lib/ia-tipos.ts                   tipos e montagem de modelo/título
 src/lib/loja.ts                       nome de vitrine + rascunhos de bloco
 src/lib/lojaBlocos.ts                 lê `loja_blocos` (adapter; injetado no motor de descrição)
-src/lib/lotes/fila.ts                 fila de lote (criar/buscar/marcar), coluna `tipo`
+src/lib/lotes/fila.ts                 fila de lote (criar/buscar/marcar/reenfileirar), coluna `tipo`
 src/app/api/lote/[id]/processar/route.ts  worker do lote — despacha por `lotes.tipo`
+src/app/lote/                         tela de criar (page + CriarLote) e acompanhar (`[id]` + AcompanharLote) o lote
 src/lib/supabase.ts                   cliente Supabase admin
 src/lib/env.ts                        variáveis de ambiente (validação)
 src/lib/crypto.ts                     hash, HMAC, assinatura de sessão

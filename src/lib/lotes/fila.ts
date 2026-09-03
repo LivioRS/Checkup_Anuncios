@@ -182,3 +182,47 @@ export async function fecharSeCompleto(loteId: string): Promise<void> {
     .eq('id', loteId);
   if (erroUpdate) throw new Error(`Falha ao fechar lote: ${erroUpdate.message}`);
 }
+
+/** Todos os itens do lote, com `resultado`/`erro` — pra tela de progresso (plano 026). */
+export async function listarItensDoLote(loteId: string): Promise<LoteItem[]> {
+  const { data, error } = await db()
+    .from('lote_itens')
+    .select('id, lote_id, item_id, status, tentativas, resultado, erro')
+    .eq('lote_id', loteId);
+  if (error) throw new Error(`Falha ao listar itens do lote: ${error.message}`);
+  return (data ?? []) as LoteItem[];
+}
+
+/**
+ * Devolve os itens `erro` do lote pra fila (`pendente`, `tentativas` zerado, `erro` limpo) e
+ * reabre o lote se algum voltou. Loop por `id` (mesmo padrão de `proximosPendentes`) em vez de
+ * `update` multi-linha — é o que o cliente Supabase deste repo e o fake de teste suportam.
+ */
+export async function reenfileirarErros(loteId: string): Promise<{ reenfileirados: number }> {
+  const cliente = db();
+  const { data, error } = await cliente
+    .from('lote_itens')
+    .select('id, lote_id, item_id, status, tentativas, resultado, erro')
+    .eq('lote_id', loteId)
+    .eq('status', 'erro');
+  if (error) throw new Error(`Falha ao buscar itens com erro: ${error.message}`);
+
+  const itens = (data ?? []) as LoteItem[];
+  for (const item of itens) {
+    const { error: erroUpdate } = await cliente
+      .from('lote_itens')
+      .update({ status: 'pendente', tentativas: 0, erro: null })
+      .eq('id', item.id);
+    if (erroUpdate) throw new Error(`Falha ao reenfileirar item: ${erroUpdate.message}`);
+  }
+
+  if (itens.length > 0) {
+    const { error: erroLote } = await cliente
+      .from('lotes')
+      .update({ status: 'em_andamento' })
+      .eq('id', loteId);
+    if (erroLote) throw new Error(`Falha ao reabrir o lote: ${erroLote.message}`);
+  }
+
+  return { reenfileirados: itens.length };
+}
