@@ -215,6 +215,7 @@ describe('provedor de IA — OpenRouter', () => {
 
   it('OpenRouter tem precedência quando as duas chaves estão setadas', async () => {
     process.env.OPENROUTER_API_KEY = 'sk-or-test';
+    process.env.OPENROUTER_MODEL = 'test/model';
     process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
 
     const fetchMock = vi.fn(async (url: string) => {
@@ -248,6 +249,7 @@ describe('lerFichaDaFoto', () => {
 describe('POST /api/anuncios/ia — acao "ficha-da-foto"', () => {
   it('manda a imagem no formato OpenRouter e devolve { atributos, titulo_sugerido }', async () => {
     process.env.OPENROUTER_API_KEY = 'sk-or-test';
+    process.env.OPENROUTER_MODEL = 'test/model';
     let corpo: Record<string, unknown> | null = null;
     vi.stubGlobal(
       'fetch',
