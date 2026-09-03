@@ -29,36 +29,83 @@ export {
 export type { Nota, Notas, PlanoTitulo, SugestaoTitulo, SugestaoModelo } from './ia-tipos';
 
 /**
- * Chamada à API da Anthropic. A planilha da Puro usa OpenAI; aqui é Claude.
- * A chave é sua e o custo é por uso — sem ANTHROPIC_API_KEY, a tela avisa e
- * o resto do painel continua funcionando normalmente.
+ * Chamada ao modelo de linguagem — o painel aceita DOIS provedores, e escolhe sozinho:
+ *
+ * 1. `OPENROUTER_API_KEY` presente → OpenRouter (gateway OpenAI-compatível, roteia pra Claude e
+ *    outros). Modelo em `OPENROUTER_MODEL` (ex.: `anthropic/claude-3.5-sonnet`).
+ * 2. senão, `ANTHROPIC_API_KEY` presente → API da Anthropic direto. Modelo em `ANTHROPIC_MODEL`.
+ * 3. nenhuma das duas → lança; a tela avisa e o resto do painel continua funcionando.
+ *
+ * A chave é sua e o custo é por uso.
  */
 
-const API = 'https://api.anthropic.com/v1/messages';
+const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
+const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 
 export function temIA() {
-  return !!process.env.ANTHROPIC_API_KEY;
+  return !!(process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY);
 }
 
 export async function perguntarAoClaude(prompt: string, maxTokens = 2000): Promise<string> {
-  const chave = process.env.ANTHROPIC_API_KEY;
-  if (!chave) throw new Error('ANTHROPIC_API_KEY não configurada no .env.local');
+  return despacharIA(prompt, maxTokens);
+}
 
+/**
+ * Igual a `perguntarAoClaude`, mas com uma imagem no prompt (plano 032, Parte B) — pra ler a
+ * ficha técnica de uma foto de etiqueta/manual. `imagemUrl` tem de ser http(s). Mesmo despacho
+ * de provedor; o formato do bloco de imagem muda entre OpenRouter (OpenAI-compat) e Anthropic.
+ */
+export async function perguntarComImagem(
+  prompt: string,
+  imagemUrl: string,
+  maxTokens = 1500,
+): Promise<string> {
+  if (!/^https?:\/\/\S+$/i.test(imagemUrl)) {
+    throw new Error('URL de imagem inválida (precisa ser http/https).');
+  }
+  if (process.env.OPENROUTER_API_KEY) {
+    return perguntarViaOpenRouter(
+      [
+        { type: 'text', text: prompt },
+        { type: 'image_url', image_url: { url: imagemUrl } },
+      ],
+      maxTokens,
+    );
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    return perguntarViaAnthropic(
+      [
+        { type: 'text', text: prompt },
+        { type: 'image', source: { type: 'url', url: imagemUrl } },
+      ],
+      maxTokens,
+    );
+  }
+  throw new Error('Nenhuma IA configurada — defina OPENROUTER_API_KEY ou ANTHROPIC_API_KEY no .env.local');
+}
+
+function despacharIA(content: unknown, maxTokens: number): Promise<string> {
+  if (process.env.OPENROUTER_API_KEY) return perguntarViaOpenRouter(content, maxTokens);
+  if (process.env.ANTHROPIC_API_KEY) return perguntarViaAnthropic(content, maxTokens);
+  throw new Error('Nenhuma IA configurada — defina OPENROUTER_API_KEY ou ANTHROPIC_API_KEY no .env.local');
+}
+
+async function perguntarViaAnthropic(content: unknown, maxTokens: number): Promise<string> {
   // Se o modelo sair de linha, troque em ANTHROPIC_MODEL.
   // Lista atual: https://docs.claude.com/en/docs/about-claude/models
   const modelo = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
 
-  const res = await fetch(API, {
+  const res = await fetch(ANTHROPIC_API, {
     method: 'POST',
     headers: {
-      'x-api-key': chave,
+      'x-api-key': process.env.ANTHROPIC_API_KEY as string,
       'anthropic-version': '2023-06-01',
       'content-type': 'application/json',
     },
     body: JSON.stringify({
       model: modelo,
       max_tokens: maxTokens,
-      messages: [{ role: 'user', content: prompt }],
+      messages: [{ role: 'user', content }],
     }),
     cache: 'no-store',
   });
@@ -75,6 +122,35 @@ export async function perguntarAoClaude(prompt: string, maxTokens = 2000): Promi
     .map((p) => p.text ?? '')
     .join('\n')
     .trim();
+}
+
+async function perguntarViaOpenRouter(content: unknown, maxTokens: number): Promise<string> {
+  const modelo = process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
+
+  const res = await fetch(OPENROUTER_API, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY as string}`,
+      'content-type': 'application/json',
+      // Opcionais recomendados pelo OpenRouter (aparecem no dashboard deles).
+      'X-Title': 'Check-up de Anuncio',
+    },
+    body: JSON.stringify({
+      model: modelo,
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content }],
+    }),
+    cache: 'no-store',
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = json?.error?.message ?? JSON.stringify(json).slice(0, 300);
+    throw new Error(`OpenRouter ${res.status}: ${msg}`);
+  }
+
+  const conteudo = json?.choices?.[0]?.message?.content;
+  return (typeof conteudo === 'string' ? conteudo : '').trim();
 }
 
 /**
@@ -548,5 +624,53 @@ export function lerRoteiroFotos(bruto: string): { titulo: string; descricao: str
       }));
   } catch {
     return [];
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Ficha técnica a partir de uma FOTO (plano 032, Parte B). A IA lê o
+ * que está legível numa etiqueta/manual/caixa — não completa, não
+ * deduz. É sugestão pro Livio revisar e mapear pros atributos do ML.
+ * ------------------------------------------------------------------ */
+
+export function promptFichaDaFoto(): string {
+  return [
+    'Você recebe a foto de uma etiqueta de especificação, um manual ou a caixa de um produto.',
+    '',
+    'Extraia SÓ o que está LEGÍVEL na imagem. NÃO complete, NÃO deduza, NÃO invente. Se um campo',
+    'não está legível ou não aparece, simplesmente não inclua.',
+    '',
+    'RESPONDA SÓ COM ESTE JSON, sem texto antes ou depois:',
+    '{"titulo_sugerido":"nome do produto se aparecer, senão string vazia","atributos":[{"nome":"campo","valor":"valor lido"}]}',
+  ].join('\n');
+}
+
+/** Lê a ficha extraída da foto. `atributos` vazio se ilegível. */
+export function lerFichaDaFoto(bruto: string): {
+  tituloSugerido: string;
+  atributos: { nome: string; valor: string }[];
+} {
+  const limpo = bruto.replace(/```(?:json)?/g, '').trim();
+  const inicio = limpo.indexOf('{');
+  const fim = limpo.lastIndexOf('}');
+  if (inicio < 0 || fim < inicio) return { tituloSugerido: '', atributos: [] };
+  try {
+    const o = JSON.parse(limpo.slice(inicio, fim + 1)) as {
+      titulo_sugerido?: unknown;
+      atributos?: unknown;
+    };
+    const lista = Array.isArray(o.atributos) ? o.atributos : [];
+    return {
+      tituloSugerido: typeof o.titulo_sugerido === 'string' ? o.titulo_sugerido.trim() : '',
+      atributos: lista
+        .map((a) => a as { nome?: unknown; valor?: unknown })
+        .filter((a) => typeof a.nome === 'string' && (a.nome as string).trim())
+        .map((a) => ({
+          nome: (a.nome as string).trim(),
+          valor: typeof a.valor === 'string' ? a.valor.trim() : '',
+        })),
+    };
+  } catch {
+    return { tituloSugerido: '', atributos: [] };
   }
 }

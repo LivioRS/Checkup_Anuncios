@@ -40,8 +40,19 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
   const [sugestoes, setSugestoes] = useState<Sugestao[] | null>(null);
   const [escolhaIa, setEscolhaIa] = useState<{ category_id: string; motivo: string } | null>(null);
   const [roteiroFotos, setRoteiroFotos] = useState<{ titulo: string; descricao: string }[] | null>(null);
-  const [iaCarregando, setIaCarregando] = useState<'descricao' | 'roteiro-fotos' | null>(null);
+  const [iaCarregando, setIaCarregando] = useState<'descricao' | 'roteiro-fotos' | 'ficha-da-foto' | null>(null);
   const [iaErro, setIaErro] = useState<string | null>(null);
+
+  // Plano 032 — ficha por GTIN (determinístico) e ficha da foto (visão).
+  const [buscandoFicha, setBuscandoFicha] = useState(false);
+  const [fichaGtin, setFichaGtin] = useState<{ id: string; nome: string; valor: string }[] | null>(null);
+  const [fichaGtinMarcados, setFichaGtinMarcados] = useState<Record<string, boolean>>({});
+  const [fichaGtinMsg, setFichaGtinMsg] = useState<string | null>(null);
+  const [tituloSugerido, setTituloSugerido] = useState<string | null>(null);
+  const [fotoFichaUrl, setFotoFichaUrl] = useState('');
+  const [fichaDaFoto, setFichaDaFoto] = useState<{ nome: string; valor: string }[] | null>(null);
+  const [usouFoto, setUsouFoto] = useState(false);
+
   const [criando, setCriando] = useState(false);
   const [resultado, setResultado] = useState<
     | { ok: true; id?: string; permalink?: string; erroDescricao?: unknown }
@@ -69,13 +80,14 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
   const categoriaNome =
     sugestoes?.find((s) => s.category_id === categoryId.trim())?.category_name ?? undefined;
 
-  async function sugerirCategoria() {
-    if (titulo.trim().length < 3) return;
+  async function sugerirCategoria(qOverride?: string) {
+    const q = (qOverride ?? titulo).trim();
+    if (q.length < 3) return;
     setSugerindo(true);
     setSugestoes(null);
     setEscolhaIa(null);
     try {
-      const p = new URLSearchParams({ q: titulo.trim(), seller_id: sellerId });
+      const p = new URLSearchParams({ q, seller_id: sellerId });
       const res = await fetch(`/api/anuncios/categoria?${p}`);
       const json = await res.json();
       if (!res.ok) {
@@ -94,8 +106,9 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
     }
   }
 
-  async function chamarIa(acao: 'descricao' | 'roteiro-fotos') {
-    if (titulo.trim().length < 5) return;
+  async function chamarIa(acao: 'descricao' | 'roteiro-fotos' | 'ficha-da-foto') {
+    if (acao !== 'ficha-da-foto' && titulo.trim().length < 5) return;
+    if (acao === 'ficha-da-foto' && !/^https?:\/\/\S+$/i.test(fotoFichaUrl.trim())) return;
     if (acao === 'descricao' && descricao.trim() && !window.confirm('Substituir a descrição atual pelo texto gerado?')) {
       return;
     }
@@ -113,6 +126,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
           category_id: categoryId.trim(),
           category_nome: categoriaNome,
           tem_fotos: fotos.length > 0,
+          foto_url: fotoFichaUrl.trim(),
         }),
       });
       const json = await res.json();
@@ -121,12 +135,57 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
         return;
       }
       if (acao === 'descricao') setDescricao(json.sugestao ?? '');
-      else setRoteiroFotos(json.fotos ?? []);
+      else if (acao === 'roteiro-fotos') setRoteiroFotos(json.fotos ?? []);
+      else {
+        setFichaDaFoto(json.atributos ?? []);
+        setUsouFoto(true);
+        if (!titulo.trim() && json.titulo_sugerido) setTituloSugerido(json.titulo_sugerido);
+      }
     } catch (e) {
       setIaErro(e instanceof Error ? e.message : String(e));
     } finally {
       setIaCarregando(null);
     }
+  }
+
+  async function buscarFichaGtin() {
+    const cod = gtin.trim();
+    if (cod.length < 8) return;
+    setBuscandoFicha(true);
+    setFichaGtinMsg(null);
+    setFichaGtin(null);
+    try {
+      const p = new URLSearchParams({ gtin: cod, seller_id: sellerId });
+      const res = await fetch(`/api/anuncios/ficha-por-gtin?${p}`);
+      const json = await res.json();
+      if (!res.ok) {
+        setFichaGtinMsg(json?.erro ?? 'Falha ao buscar a ficha.');
+        return;
+      }
+      if (!json.achado) {
+        setFichaGtinMsg('Nada no catálogo do Mercado Livre para esse código — preencha a ficha na mão ou use "Extrair ficha da foto".');
+        return;
+      }
+      const atrs = (json.atributos ?? []) as { id: string; nome: string; valor: string }[];
+      setFichaGtin(atrs);
+      setFichaGtinMarcados(Object.fromEntries(atrs.map((a) => [a.id, true])));
+      if (!titulo.trim() && json.titulo_sugerido) setTituloSugerido(json.titulo_sugerido);
+      if (!/^ML[A-Z]\d+$/.test(categoryId.trim()) && json.titulo_sugerido) {
+        void sugerirCategoria(json.titulo_sugerido);
+      }
+    } catch (e) {
+      setFichaGtinMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBuscandoFicha(false);
+    }
+  }
+
+  function origemFicha(): string {
+    const temGtin = (fichaGtin ?? []).some((a) => fichaGtinMarcados[a.id] !== false);
+    if (temGtin && usouFoto) return 'gtin+foto';
+    if (temGtin) return 'gtin';
+    if (usouFoto) return 'foto';
+    return 'manual';
   }
 
   async function criar() {
@@ -150,6 +209,10 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
           fotos,
           listing_type_id: listingType,
           descricao: descricao.trim(),
+          atributos_extra: (fichaGtin ?? [])
+            .filter((a) => fichaGtinMarcados[a.id] !== false)
+            .map((a) => ({ id: a.id, value_name: a.valor })),
+          origem_ficha: origemFicha(),
         }),
       });
       const json = await res.json();
@@ -212,13 +275,27 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
             <button
               type="button"
               className="btn pequeno"
-              onClick={sugerirCategoria}
+              onClick={() => sugerirCategoria()}
               disabled={sugerindo || titulo.trim().length < 3}
             >
               {sugerindo ? 'Buscando…' : 'Sugerir pelo título'}
             </button>
           </div>
         </div>
+        {tituloSugerido && !titulo.trim() ? (
+          <p style={{ margin: '6px 0 0' }}>
+            <button
+              type="button"
+              className="btn pequeno"
+              onClick={() => {
+                setTitulo(tituloSugerido);
+                setTituloSugerido(null);
+              }}
+            >
+              Usar título sugerido: “{tituloSugerido.slice(0, 60)}”
+            </button>
+          </p>
+        ) : null}
         {escolhaIa ? (
           <p style={{ margin: '8px 0 0' }}>
             <button
@@ -264,15 +341,86 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
         </div>
         <div className="campo pilha" style={campo}>
           <div className="rot">GTIN / EAN (deixe vazio se não tiver)</div>
-          <div className="ctrl">
+          <div className="ctrl" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input
               type="text"
               value={gtin}
               onChange={(e) => setGtin(e.target.value)}
               placeholder="7891234567890"
+              style={{ maxWidth: 200 }}
             />
+            <button
+              type="button"
+              className="btn pequeno"
+              onClick={buscarFichaGtin}
+              disabled={buscandoFicha || gtin.trim().length < 8}
+            >
+              {buscandoFicha ? 'Buscando…' : 'Buscar ficha pelo código'}
+            </button>
           </div>
         </div>
+        {fichaGtinMsg ? <small className="vazio">{fichaGtinMsg}</small> : null}
+        {fichaGtin && fichaGtin.length > 0 ? (
+          <div className="card" style={{ marginTop: 8 }}>
+            <small>
+              <Selo semIcone>{fichaGtin.length} atributos do catálogo do ML</Selo>{' '}
+              Vão pra ficha do anúncio junto de Marca/Modelo. Desmarque o que não quiser.
+            </small>
+            <div style={{ marginTop: 8, display: 'grid', gap: 4 }}>
+              {fichaGtin.map((a) => (
+                <label key={a.id} style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+                  <input
+                    type="checkbox"
+                    checked={fichaGtinMarcados[a.id] !== false}
+                    onChange={(e) =>
+                      setFichaGtinMarcados((m) => ({ ...m, [a.id]: e.target.checked }))
+                    }
+                  />
+                  <span>
+                    <strong>{a.nome}:</strong> {a.valor}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="campo pilha" style={campo}>
+          <div className="rot">Extrair ficha de uma foto (etiqueta / manual / caixa)</div>
+          <div className="ctrl" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              value={fotoFichaUrl}
+              onChange={(e) => setFotoFichaUrl(e.target.value)}
+              placeholder="https://…/foto-da-etiqueta.jpg"
+            />
+            <button
+              type="button"
+              className="btn pequeno"
+              onClick={() => chamarIa('ficha-da-foto')}
+              disabled={iaCarregando !== null || !/^https?:\/\/\S+$/i.test(fotoFichaUrl.trim())}
+            >
+              {iaCarregando === 'ficha-da-foto' ? 'Lendo…' : 'Extrair ficha da foto (IA)'}
+            </button>
+          </div>
+        </div>
+        {fichaDaFoto && fichaDaFoto.length > 0 ? (
+          <div className="card" style={{ marginTop: 8 }}>
+            <small>
+              <Selo nivel="atencao">sugestão da foto — confira antes de usar</Selo> A IA leu o que
+              estava legível. Copie pro campo certo ou peça pro Livio revisar; não entra no anúncio
+              automaticamente.
+            </small>
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+              {fichaDaFoto.map((a, i) => (
+                <li key={i}>
+                  <strong>{a.nome}:</strong> {a.valor}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <div className="campo pilha" style={campo}>
           <div className="rot">Garantia</div>
           <div className="ctrl" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

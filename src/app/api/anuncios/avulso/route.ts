@@ -33,11 +33,33 @@ type CriarAvulsoBody = {
   fotos?: unknown;
   listing_type_id?: string;
   descricao?: string;
+  /** Atributos extras da ficha (plano 032) — ex.: vindos do enriquecimento por GTIN. */
+  atributos_extra?: unknown;
+  /** De onde veio a ficha (plano 032, "Medição"): manual | gtin | foto | gtin+foto. */
+  origem_ficha?: string;
 };
 
 const CONDICOES = new Set(['new', 'used']);
 const TIPOS_ANUNCIO = new Set(['gold_special', 'gold_pro']);
 const CATEGORIA_RE = /^ML[A-Z]\d+$/;
+const ATRIBUTOS_RESERVADOS = new Set(['BRAND', 'MODEL', 'GTIN', 'EMPTY_GTIN_REASON']);
+
+/** Normaliza `atributos_extra` do corpo: só {id,value_name} não-vazios, sem os reservados, teto 40. */
+function lerAtributosExtra(bruto: unknown): { id: string; value_name: string }[] {
+  if (!Array.isArray(bruto)) return [];
+  return bruto
+    .map((a) => a as { id?: unknown; value_name?: unknown })
+    .filter(
+      (a) =>
+        typeof a.id === 'string' &&
+        a.id.trim() !== '' &&
+        typeof a.value_name === 'string' &&
+        a.value_name.trim() !== '',
+    )
+    .map((a) => ({ id: (a.id as string).trim(), value_name: (a.value_name as string).trim() }))
+    .filter((a) => !ATRIBUTOS_RESERVADOS.has(a.id.toUpperCase()))
+    .slice(0, 40);
+}
 
 type ItemCriado = { id?: string; status?: string; permalink?: string };
 
@@ -78,6 +100,8 @@ export async function POST(req: Request) {
   const listingTypeId = String(body.listing_type_id ?? 'gold_special').trim();
   const fotos = Array.isArray(body.fotos) ? body.fotos.filter(ehUrlDeFoto).map((s) => s.trim()) : [];
   const descricao = limparParaDescricao(String(body.descricao ?? ''));
+  const atributosExtra = lerAtributosExtra(body.atributos_extra);
+  const origemFicha = String(body.origem_ficha ?? '').trim() || (atributosExtra.length ? 'gtin' : 'manual');
 
   if (!sellerId) return NextResponse.json({ erro: 'Falta seller_id.' }, { status: 400 });
   if (titulo.length < 10 || titulo.length > 60) {
@@ -124,6 +148,14 @@ export async function POST(req: Request) {
       ? { id: 'GTIN', value_name: gtin }
       : { id: 'EMPTY_GTIN_REASON', value_name: 'Não possui código universal de produto' },
   ];
+
+  // Atributos extras (plano 032) entram DEPOIS dos do form, sem duplicar id.
+  const idsUsados = new Set(atributos.map((a) => a.id.toUpperCase()));
+  for (const ex of atributosExtra) {
+    if (idsUsados.has(ex.id.toUpperCase())) continue;
+    idsUsados.add(ex.id.toUpperCase());
+    atributos.push(ex);
+  }
 
   const payload = {
     title: titulo,
@@ -200,7 +232,14 @@ export async function POST(req: Request) {
     await registrar({
       status: 200,
       itemId: criado?.id ?? null,
-      response: { criado, pausado, erroPausa, erroDescricao },
+      response: {
+        criado,
+        pausado,
+        erroPausa,
+        erroDescricao,
+        origem_ficha: origemFicha,
+        atributos_extra: atributosExtra.length,
+      },
     });
 
     if (!pausado) {

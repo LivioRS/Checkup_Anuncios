@@ -47,6 +47,8 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 025  | Estender o lote pra título/descrição, só geração — gravação continua manual/revisada (kanban "Do Anúncio ao Portal" f2c2) | P1 | M | 024 | DONE |
 | 029  | Criar anúncio FORA do catálogo (produto sem PDP / lançamento) — era o fallback adiado do 019 | P1 | L | 019 | DONE (branch `feat/anuncio-fora-catalogo`) |
 | 030  | IA no anúncio fora do catálogo — descrição, escolha de categoria e roteiro de fotos | P1 | M | 029 | DONE (branch `feat/029-ia-avulso`) |
+| 031  | Provedor de IA plugável — OpenRouter OU Anthropic direto (sem plano próprio, mudança pequena) | P2 | S | — | DONE (branch `feat/openrouter-provider`) |
+| 032  | Enriquecer a ficha do anúncio avulso SEM agente — GTIN→catálogo (determinístico) + visão de um tiro sobre foto da etiqueta. Veredito do LLM Council. | P1 | M | 029, 030 | DONE (Partes A+B; branch `feat/032-ficha-gtin`. Parte C fora de escopo por decisão.) |
 
 ## Dependency notes
 
@@ -460,3 +462,46 @@ IA" na descrição.
 
 **Desvio do plano**: branch `feat/029-ia-avulso` empilhado sobre `feat/anuncio-fora-catalogo` +
 commit + push + PR.
+
+## Status do 032 (2026-09-03, concluído — Partes A+B)
+
+Executado o plano 032 (derivado do veredito do LLM Council: **não** construir agente com
+ferramentas; atacar "anexar ficha confiável a um rascunho" na ordem de menor custo).
+
+**Parte A — determinístico por GTIN**:
+- `src/app/api/anuncios/ficha-por-gtin/route.ts` (nova, `GET`, só leitura): GTIN →
+  `buscarProdutos` → `{ achado, titulo_sugerido, domain_id, atributos: {id,nome,valor}[] }`.
+  **Nunca devolve as imagens do produto de catálogo** (veredito: são do fabricante/ML, não
+  podem virar as fotos do anúncio).
+- `src/app/api/anuncios/avulso/route.ts`: corpo aceita `atributos_extra` — mesclados DEPOIS de
+  BRAND/MODEL/GTIN, sem os reservados, dedup por id, teto 40. `origem_ficha` gravado no
+  `response` de `anuncio_criacoes` (medição pra Parte C).
+- `CriarAvulso.tsx`: botão "Buscar ficha pelo código" → lista de atributos com checkbox →
+  entram como `atributos_extra`. "Usar título sugerido" quando o título está vazio.
+
+**Parte B — ficha de uma foto (visão, um tiro)**:
+- `src/lib/ia.ts`: `perguntarComImagem(prompt, imagemUrl, maxTokens)` — mesmo despacho de
+  provedor; bloco de imagem em formato OpenRouter (`image_url`) ou Anthropic (`image`
+  `source.type:'url'`). `perguntarViaAnthropic`/`perguntarViaOpenRouter` passaram a aceitar
+  `content: unknown` (string ou blocos) — **caminho de texto byte-idêntico** ao de antes.
+  `promptFichaDaFoto` + `lerFichaDaFoto`.
+- `POST /api/anuncios/ia` ganhou `acao: 'ficha-da-foto'` (`foto_url` obrigatório, http; senão
+  400; sem chave → 503). Devolve `{ titulo_sugerido, atributos: {nome,valor}[] }` — **sugestão
+  pro Livio revisar**, não preenche os `attributes` do ML sozinho.
+- `CriarAvulso.tsx`: campo "URL de uma foto da etiqueta/manual/caixa" + botão "Extrair ficha da
+  foto (IA)" → lista `{nome,valor}` com aviso "confira antes de usar".
+
+**Parte C (busca web / loop de agente)**: NÃO implementada — fora de escopo por decisão. Só
+retomar com baseline medido (`origem_ficha`) + Partes A/B insuficientes + decisão explícita.
+
+**Gate completo (AGENTS.md)**: `build` / `lint` / `verificar` / `test` — verdes, **90/90**
+(11 novos: `tests/anuncios-ficha-gtin.test.ts` + `ficha-da-foto`/`lerFichaDaFoto` em
+`tests/anuncios-ia.test.ts`). `tests/anuncios-avulso.test.ts` e `tests/anuncios.test.ts`
+seguem 100% verdes (STOP condition).
+
+**Não testado**: contra o ML/IA de verdade — sem `ML_CLIENT_ID`/`OPENROUTER_API_KEY` neste
+ambiente. Teste manual: `/criar` → "Fora do catálogo" → pôr um GTIN real → "Buscar ficha pelo
+código"; e "Extrair ficha da foto" com a URL de uma foto de etiqueta.
+
+**Desvio do plano**: branch `feat/032-ficha-gtin` empilhado sobre `feat/openrouter-provider`
+(que tem o plano doc) + commit + push + PR.
