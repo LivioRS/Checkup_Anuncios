@@ -20,7 +20,13 @@ function descreverErro(json: unknown): string {
 
 const campo = { marginTop: 12 } as const;
 
-export default function CriarAvulso({ contas }: { contas: Conta[] }) {
+export default function CriarAvulso({
+  contas,
+  onTrocarParaCatalogo,
+}: {
+  contas: Conta[];
+  onTrocarParaCatalogo?: (dados: { sellerId?: string; marca?: string; modelo?: string; codigo?: string }) => void;
+}) {
   const [sellerId, setSellerId] = useState(contas[0]?.seller_id ?? '');
   const [titulo, setTitulo] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -48,10 +54,19 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
   const [fichaGtin, setFichaGtin] = useState<{ id: string; nome: string; valor: string }[] | null>(null);
   const [fichaGtinMarcados, setFichaGtinMarcados] = useState<Record<string, boolean>>({});
   const [fichaGtinMsg, setFichaGtinMsg] = useState<string | null>(null);
+  const [fichaGtinProdutoId, setFichaGtinProdutoId] = useState<string | null>(null);
   const [tituloSugerido, setTituloSugerido] = useState<string | null>(null);
   const [fotoFichaUrl, setFotoFichaUrl] = useState('');
   const [fichaDaFoto, setFichaDaFoto] = useState<{ nome: string; valor: string }[] | null>(null);
   const [usouFoto, setUsouFoto] = useState(false);
+
+  // Plano 033 — rascunho por IA e ficha do site da marca.
+  const [preenchendoIa, setPreenchendoIa] = useState(false);
+  const [fichaWeb, setFichaWeb] = useState<{ nome: string; valor: string }[] | null>(null);
+  const [fichaWebFontes, setFichaWebFontes] = useState<string[]>([]);
+  const [fichaWebMsg, setFichaWebMsg] = useState<string | null>(null);
+  const [buscandoFichaWeb, setBuscandoFichaWeb] = useState(false);
+  const [preenchidoPorIa, setPreenchidoPorIa] = useState(false);
 
   const [criando, setCriando] = useState(false);
   const [resultado, setResultado] = useState<
@@ -79,6 +94,73 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
 
   const categoriaNome =
     sugestoes?.find((s) => s.category_id === categoryId.trim())?.category_name ?? undefined;
+
+  async function preencherComIa() {
+    if (titulo.trim().length < 10) return;
+    setPreenchendoIa(true);
+    setIaErro(null);
+    try {
+      const res = await fetch('/api/anuncios/rascunho', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          seller_id: sellerId,
+          titulo: titulo.trim(),
+          gtin: gtin.trim(),
+          marca: marca.trim(),
+          modelo: modelo.trim(),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setIaErro(json?.erro ?? 'A IA não respondeu.');
+        return;
+      }
+      if (json.category_id && !/^ML[A-Z]\d+$/.test(categoryId.trim())) setCategoryId(json.category_id);
+      if (json.marca && !marca.trim()) setMarca(json.marca);
+      if (json.modelo && !modelo.trim()) setModelo(json.modelo);
+      if (json.descricao && !descricao.trim()) setDescricao(json.descricao);
+      const atrs = (json.atributos ?? []) as { nome: string; valor: string }[];
+      if (atrs.length) setFichaWeb(atrs);
+      setPreenchidoPorIa(true);
+    } catch (e) {
+      setIaErro(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPreenchendoIa(false);
+    }
+  }
+
+  async function buscarFichaWeb() {
+    if (titulo.trim().length < 5 && !(marca.trim() && modelo.trim())) return;
+    setBuscandoFichaWeb(true);
+    setFichaWebMsg(null);
+    setFichaWeb(null);
+    setFichaWebFontes([]);
+    try {
+      const res = await fetch('/api/anuncios/ficha-web', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ titulo: titulo.trim(), marca: marca.trim(), modelo: modelo.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setFichaWebMsg(json?.erro ?? 'Falha ao buscar na web.');
+        return;
+      }
+      setFichaWebFontes(json.fontes ?? []);
+      const atrs = (json.atributos ?? []) as { nome: string; valor: string }[];
+      if (atrs.length) {
+        setFichaWeb(atrs);
+        setUsouFoto(true);
+      } else {
+        setFichaWebMsg(json.aviso ?? 'Nada aproveitável encontrado.');
+      }
+    } catch (e) {
+      setFichaWebMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBuscandoFichaWeb(false);
+    }
+  }
 
   async function sugerirCategoria(qOverride?: string) {
     const q = (qOverride ?? titulo).trim();
@@ -154,6 +236,7 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
     setBuscandoFicha(true);
     setFichaGtinMsg(null);
     setFichaGtin(null);
+    setFichaGtinProdutoId(null);
     try {
       const p = new URLSearchParams({ gtin: cod, seller_id: sellerId });
       const res = await fetch(`/api/anuncios/ficha-por-gtin?${p}`);
@@ -169,6 +252,8 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
       const atrs = (json.atributos ?? []) as { id: string; nome: string; valor: string }[];
       setFichaGtin(atrs);
       setFichaGtinMarcados(Object.fromEntries(atrs.map((a) => [a.id, true])));
+      // Plano 033 — se o GTIN resolve pra um produto de catálogo, o modo "Do catálogo" traz tudo.
+      if (json.produto_id) setFichaGtinProdutoId(String(json.produto_id));
       if (!titulo.trim() && json.titulo_sugerido) setTituloSugerido(json.titulo_sugerido);
       if (!/^ML[A-Z]\d+$/.test(categoryId.trim()) && json.titulo_sugerido) {
         void sugerirCategoria(json.titulo_sugerido);
@@ -235,8 +320,31 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
 
   return (
     <>
-      <Secao titulo="1. Produto">
-        <div className="campo pilha">
+      {preenchidoPorIa ? (
+        <p style={{ margin: '0 0 12px' }}>
+          <Selo nivel="atencao">preenchido pela IA</Selo> confira <strong>todos</strong> os campos
+          antes de publicar — categoria, marca, modelo, ficha e descrição são sugestão.
+        </p>
+      ) : null}
+
+      <Secao
+        titulo="1. Produto"
+        acao={
+          <button
+            type="button"
+            className="btn pequeno primary"
+            onClick={preencherComIa}
+            disabled={preenchendoIa || titulo.trim().length < 10}
+          >
+            {preenchendoIa ? 'Preenchendo…' : 'Preencher com IA'}
+          </button>
+        }
+      >
+        <small>
+          Põe o título (e o GTIN, se tiver) e clique — a IA sugere categoria, marca, modelo, ficha
+          e descrição. Foto continua com você: o ML exige foto real do produto.
+        </small>
+        <div className="campo pilha" style={campo}>
           <div className="rot">Conta</div>
           <div className="ctrl">
             <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
@@ -360,6 +468,31 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
           </div>
         </div>
         {fichaGtinMsg ? <small className="vazio">{fichaGtinMsg}</small> : null}
+        {fichaGtinProdutoId && onTrocarParaCatalogo ? (
+          <div className="card" style={{ marginTop: 8 }}>
+            <p style={{ margin: 0 }}>
+              <Selo nivel="atencao">catálogo</Selo> Este produto já tem página no catálogo do
+              Mercado Livre (<code>{fichaGtinProdutoId}</code>). O modo <strong>Do catálogo</strong>{' '}
+              traz título, <strong>fotos reais</strong> e ficha prontos — quase sem digitação.
+            </p>
+            <p style={{ margin: '8px 0 0' }}>
+              <button
+                type="button"
+                className="btn primary pequeno"
+                onClick={() =>
+                  onTrocarParaCatalogo({
+                    sellerId,
+                    marca: marca.trim() || undefined,
+                    modelo: modelo.trim() || undefined,
+                    codigo: gtin.trim() || undefined,
+                  })
+                }
+              >
+                Ir pro modo Do catálogo
+              </button>
+            </p>
+          </div>
+        ) : null}
         {fichaGtin && fichaGtin.length > 0 ? (
           <div className="card" style={{ marginTop: 8 }}>
             <small>
@@ -418,6 +551,59 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
                 </li>
               ))}
             </ul>
+          </div>
+        ) : null}
+
+        <div className="campo pilha" style={campo}>
+          <div className="rot">Buscar ficha no site da marca</div>
+          <div className="ctrl">
+            <button
+              type="button"
+              className="btn pequeno"
+              onClick={buscarFichaWeb}
+              disabled={
+                buscandoFichaWeb ||
+                (titulo.trim().length < 5 && !(marca.trim() && modelo.trim()))
+              }
+            >
+              {buscandoFichaWeb ? 'Buscando na web…' : 'Buscar ficha no site da marca (IA)'}
+            </button>
+          </div>
+        </div>
+        {fichaWebMsg ? <small className="vazio">{fichaWebMsg}</small> : null}
+        {fichaWeb && fichaWeb.length > 0 ? (
+          <div className="card" style={{ marginTop: 8 }}>
+            <small>
+              <Selo nivel="atencao">specs da web — confira antes de publicar</Selo> Só
+              especificações factuais, extraídas das páginas abaixo. A descrição é reescrita, não
+              copiada. Não entra nos atributos do ML sozinho.
+            </small>
+            <ul style={{ margin: '8px 0 0', paddingLeft: 18 }}>
+              {fichaWeb.map((a, i) => (
+                <li key={i}>
+                  <strong>{a.nome}:</strong> {a.valor}
+                </li>
+              ))}
+            </ul>
+            {fichaWebFontes.length ? (
+              <small style={{ display: 'block', marginTop: 8 }}>
+                Fontes:{' '}
+                {fichaWebFontes.map((u, i) => (
+                  <span key={i}>
+                    {i > 0 ? ' · ' : ''}
+                    <a href={u} target="_blank" rel="noreferrer">
+                      {(() => {
+                        try {
+                          return new URL(u).hostname;
+                        } catch {
+                          return u.slice(0, 40);
+                        }
+                      })()}
+                    </a>
+                  </span>
+                ))}
+              </small>
+            ) : null}
           </div>
         ) : null}
 
@@ -597,6 +783,13 @@ export default function CriarAvulso({ contas }: { contas: Conta[] }) {
                 )}{' '}
                 — confira e ative manualmente no Mercado Livre.
               </p>
+              {resultado.id ? (
+                <p style={{ margin: '8px 0 0' }}>
+                  <a className="btn pequeno" href={`/itens/${resultado.id}/fotos`}>
+                    Padronizar as fotos (quadrado / fundo branco)
+                  </a>
+                </p>
+              ) : null}
               {resultado.erroDescricao ? (
                 <p style={{ margin: '8px 0 0' }}>
                   <Selo nivel="atencao">a descrição não gravou</Selo> o anúncio foi criado; ajuste

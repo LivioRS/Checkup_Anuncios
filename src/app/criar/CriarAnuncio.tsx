@@ -26,11 +26,17 @@ function descreverErro(json: unknown): string {
   }
 }
 
-export default function CriarAnuncio({ contas }: { contas: Conta[] }) {
-  const [sellerId, setSellerId] = useState(contas[0]?.seller_id ?? '');
-  const [marca, setMarca] = useState('');
-  const [modelo, setModelo] = useState('');
-  const [codigo, setCodigo] = useState('');
+export default function CriarAnuncio({
+  contas,
+  prefill,
+}: {
+  contas: Conta[];
+  prefill?: { sellerId?: string; marca?: string; modelo?: string; codigo?: string };
+}) {
+  const [sellerId, setSellerId] = useState(prefill?.sellerId || contas[0]?.seller_id || '');
+  const [marca, setMarca] = useState(prefill?.marca ?? '');
+  const [modelo, setModelo] = useState(prefill?.modelo ?? '');
+  const [codigo, setCodigo] = useState(prefill?.codigo ?? '');
 
   const [buscando, setBuscando] = useState(false);
   const [erroBusca, setErroBusca] = useState<string | null>(null);
