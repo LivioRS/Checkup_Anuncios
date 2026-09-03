@@ -47,6 +47,7 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 025  | Estender o lote pra título/descrição, só geração — gravação continua manual/revisada (kanban "Do Anúncio ao Portal" f2c2) | P1 | M | 024 | DONE |
 | 029  | Criar anúncio FORA do catálogo (produto sem PDP / lançamento) — era o fallback adiado do 019 | P1 | L | 019 | DONE (branch `feat/anuncio-fora-catalogo`) |
 | 030  | IA no anúncio fora do catálogo — descrição, escolha de categoria e roteiro de fotos | P1 | M | 029 | DONE (branch `feat/029-ia-avulso`) |
+| 031  | Provedor de IA plugável — OpenRouter OU Anthropic direto (sem plano próprio, mudança pequena) | P2 | S | — | DONE (branch `feat/openrouter-provider`) |
 
 ## Dependency notes
 

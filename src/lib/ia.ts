@@ -29,29 +29,42 @@ export {
 export type { Nota, Notas, PlanoTitulo, SugestaoTitulo, SugestaoModelo } from './ia-tipos';
 
 /**
- * Chamada à API da Anthropic. A planilha da Puro usa OpenAI; aqui é Claude.
- * A chave é sua e o custo é por uso — sem ANTHROPIC_API_KEY, a tela avisa e
- * o resto do painel continua funcionando normalmente.
+ * Chamada ao modelo de linguagem — o painel aceita DOIS provedores, e escolhe sozinho:
+ *
+ * 1. `OPENROUTER_API_KEY` presente → OpenRouter (gateway OpenAI-compatível, roteia pra Claude e
+ *    outros). Modelo em `OPENROUTER_MODEL` (ex.: `anthropic/claude-3.5-sonnet`).
+ * 2. senão, `ANTHROPIC_API_KEY` presente → API da Anthropic direto. Modelo em `ANTHROPIC_MODEL`.
+ * 3. nenhuma das duas → lança; a tela avisa e o resto do painel continua funcionando.
+ *
+ * A chave é sua e o custo é por uso.
  */
 
-const API = 'https://api.anthropic.com/v1/messages';
+const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
+const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 
 export function temIA() {
-  return !!process.env.ANTHROPIC_API_KEY;
+  return !!(process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY);
 }
 
 export async function perguntarAoClaude(prompt: string, maxTokens = 2000): Promise<string> {
-  const chave = process.env.ANTHROPIC_API_KEY;
-  if (!chave) throw new Error('ANTHROPIC_API_KEY não configurada no .env.local');
+  if (process.env.OPENROUTER_API_KEY) {
+    return perguntarViaOpenRouter(prompt, maxTokens);
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    return perguntarViaAnthropic(prompt, maxTokens);
+  }
+  throw new Error('Nenhuma IA configurada — defina OPENROUTER_API_KEY ou ANTHROPIC_API_KEY no .env.local');
+}
 
+async function perguntarViaAnthropic(prompt: string, maxTokens: number): Promise<string> {
   // Se o modelo sair de linha, troque em ANTHROPIC_MODEL.
   // Lista atual: https://docs.claude.com/en/docs/about-claude/models
   const modelo = process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5';
 
-  const res = await fetch(API, {
+  const res = await fetch(ANTHROPIC_API, {
     method: 'POST',
     headers: {
-      'x-api-key': chave,
+      'x-api-key': process.env.ANTHROPIC_API_KEY as string,
       'anthropic-version': '2023-06-01',
       'content-type': 'application/json',
     },
@@ -75,6 +88,35 @@ export async function perguntarAoClaude(prompt: string, maxTokens = 2000): Promi
     .map((p) => p.text ?? '')
     .join('\n')
     .trim();
+}
+
+async function perguntarViaOpenRouter(prompt: string, maxTokens: number): Promise<string> {
+  const modelo = process.env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
+
+  const res = await fetch(OPENROUTER_API, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY as string}`,
+      'content-type': 'application/json',
+      // Opcionais recomendados pelo OpenRouter (aparecem no dashboard deles).
+      'X-Title': 'Check-up de Anuncio',
+    },
+    body: JSON.stringify({
+      model: modelo,
+      max_tokens: maxTokens,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+    cache: 'no-store',
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = json?.error?.message ?? JSON.stringify(json).slice(0, 300);
+    throw new Error(`OpenRouter ${res.status}: ${msg}`);
+  }
+
+  const conteudo = json?.choices?.[0]?.message?.content;
+  return (typeof conteudo === 'string' ? conteudo : '').trim();
 }
 
 /**

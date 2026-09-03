@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFakeSupabase } from './helpers/supabase-fake';
 import { injetarCliente } from '../src/lib/supabase';
-import { lerEscolhaCategoria, lerRoteiroFotos } from '../src/lib/ia';
+import { lerEscolhaCategoria, lerRoteiroFotos, temIA } from '../src/lib/ia';
 import { GET as categoriaGET } from '../src/app/api/anuncios/categoria/route';
 import { POST as iaPOST } from '../src/app/api/anuncios/ia/route';
 
@@ -38,6 +38,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
   injetarCliente(null);
   delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.OPENROUTER_API_KEY;
+  delete process.env.OPENROUTER_MODEL;
 });
 
 describe('lerEscolhaCategoria', () => {
@@ -163,11 +165,68 @@ describe('POST /api/anuncios/ia', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('sem ANTHROPIC_API_KEY → 503', async () => {
+  it('sem nenhuma chave de IA → 503', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => claude('x')));
     const res = await iaPOST(
       new Request('http://local', { method: 'POST', body: JSON.stringify({ acao: 'descricao', titulo: 'Pedal Overdrive XYZ' }) }),
     );
     expect(res.status).toBe(503);
+  });
+});
+
+describe('provedor de IA — OpenRouter', () => {
+  it('temIA() é true só com OPENROUTER_API_KEY', () => {
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
+    expect(temIA()).toBe(true);
+  });
+
+  it('acao "descricao" via OpenRouter: usa o endpoint e o formato OpenAI-compatível', async () => {
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
+    process.env.OPENROUTER_MODEL = 'anthropic/claude-3.5-sonnet';
+
+    let alvo: { url: string; auth?: string; body: Record<string, unknown> } | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        alvo = {
+          url: String(url),
+          auth: (init?.headers as Record<string, string>)?.Authorization,
+          body: JSON.parse(String(init?.body)),
+        };
+        return responseBody({ choices: [{ message: { content: 'Descrição gerada pela OpenRouter.' } }] });
+      }),
+    );
+
+    const res = await iaPOST(
+      new Request('http://local', {
+        method: 'POST',
+        body: JSON.stringify({ acao: 'descricao', titulo: 'Pedal Overdrive XYZ', marca: 'XYZ' }),
+      }),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.sugestao).toBe('Descrição gerada pela OpenRouter.');
+    expect(alvo!.url).toBe('https://openrouter.ai/api/v1/chat/completions');
+    expect(alvo!.auth).toBe('Bearer sk-or-test');
+    expect(alvo!.body.model).toBe('anthropic/claude-3.5-sonnet');
+    expect(alvo!.body.messages).toEqual([{ role: 'user', content: expect.any(String) }]);
+  });
+
+  it('OpenRouter tem precedência quando as duas chaves estão setadas', async () => {
+    process.env.OPENROUTER_API_KEY = 'sk-or-test';
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
+
+    const fetchMock = vi.fn(async (url: string) => {
+      expect(String(url)).toContain('openrouter.ai');
+      return responseBody({ choices: [{ message: { content: 'ok' } }] });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await iaPOST(
+      new Request('http://local', { method: 'POST', body: JSON.stringify({ acao: 'descricao', titulo: 'Pedal Overdrive XYZ' }) }),
+    );
+    expect(res.status).toBe(200);
+    expect(fetchMock.mock.calls.every(([u]) => !String(u).includes('api.anthropic.com'))).toBe(true);
   });
 });
