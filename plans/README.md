@@ -53,6 +53,7 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 031  | Provedor de IA plugável — OpenRouter OU Anthropic direto (sem plano próprio, mudança pequena) | P2 | S | — | DONE (branch `feat/openrouter-provider`) |
 | 032  | Enriquecer a ficha do anúncio avulso SEM agente — GTIN→catálogo (determinístico) + visão de um tiro sobre foto da etiqueta. Veredito do LLM Council. | P1 | M | 029, 030 | DONE (Partes A+B; branch `feat/032-ficha-gtin`. Parte C fora de escopo por decisão.) |
 | 033  | Rascunho de anúncio por IA — roteamento GTIN→catálogo, botão "Preencher com IA", ficha buscada no site do fabricante (web). 2 vereditos do LLM Council + decisão do Livio. | P1 | L | 029–032 | DONE (Partes A+B+C+D; branch `feat/033-rascunho-ia`) |
+| 034  | Levar "criar anúncio" (019, 029–033) pro portal do cliente — rotas `/api/portal/anuncios/**` via `comContaCliente`, página `/portal/criar` | P1 | L | 027, 028 | TODO (plano escrito — depende de 027 e 028 mergeados) |
 
 ## Dependency notes
 
