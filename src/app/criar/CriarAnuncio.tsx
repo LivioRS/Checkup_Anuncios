@@ -113,7 +113,7 @@ export default function CriarAnuncio({ contas }: { contas: Conta[] }) {
     <>
       <Secao titulo="1. Produto">
         <div className="grid k2">
-          <div className="campo">
+          <div className="campo empilhado">
             <div className="rot">Conta</div>
             <div className="ctrl">
               <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
@@ -125,7 +125,7 @@ export default function CriarAnuncio({ contas }: { contas: Conta[] }) {
               </select>
             </div>
           </div>
-          <div className="campo">
+          <div className="campo empilhado">
             <div className="rot">Código (GTIN/EAN) — opcional</div>
             <div className="ctrl">
               <input
@@ -136,13 +136,13 @@ export default function CriarAnuncio({ contas }: { contas: Conta[] }) {
               />
             </div>
           </div>
-          <div className="campo">
+          <div className="campo empilhado">
             <div className="rot">Marca</div>
             <div className="ctrl">
               <input type="text" value={marca} onChange={(e) => setMarca(e.target.value)} />
             </div>
           </div>
-          <div className="campo">
+          <div className="campo empilhado">
             <div className="rot">Modelo</div>
             <div className="ctrl">
               <input type="text" value={modelo} onChange={(e) => setModelo(e.target.value)} />
@@ -231,7 +231,7 @@ export default function CriarAnuncio({ contas }: { contas: Conta[] }) {
       {selecionado ? (
         <Secao titulo="3. Preço, estoque e condição">
           <div className="grid k4">
-            <div className="campo">
+            <div className="campo empilhado">
               <div className="rot">Valor (R$)</div>
               <div className="ctrl">
                 <input
@@ -243,7 +243,7 @@ export default function CriarAnuncio({ contas }: { contas: Conta[] }) {
                 />
               </div>
             </div>
-            <div className="campo">
+            <div className="campo empilhado">
               <div className="rot">Quantidade</div>
               <div className="ctrl">
                 <input
@@ -255,7 +255,7 @@ export default function CriarAnuncio({ contas }: { contas: Conta[] }) {
                 />
               </div>
             </div>
-            <div className="campo">
+            <div className="campo empilhado">
               <div className="rot">Condição</div>
               <div className="ctrl">
                 <select value={condicao} onChange={(e) => setCondicao(e.target.value as 'new' | 'used')}>

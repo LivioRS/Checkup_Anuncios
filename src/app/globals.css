@@ -491,6 +491,18 @@ textarea:disabled {
   opacity: 0.72;
 }
 
+/* Variante empilhada: pro .campo que mora dentro de um .grid (colunas lado a
+   lado), rótulo em cima e controle embaixo, em vez do padrão
+   rótulo-esquerda/valor-direita de 280px — que só funciona numa lista de
+   largura cheia (ficha técnica). Sem isso, o rótulo de 280px espremia o
+   input pra um fiapo dentro de uma coluna de ~300px do .grid.k2/.k4. */
+.campo.empilhado {
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding: 0;
+  border-bottom: 0;
+}
+
 /* ---------- barra fixa de salvar ---------- */
 
 .salvar {
