@@ -31,6 +31,8 @@ type CriarAvulsoBody = {
   gtin?: string;
   garantia?: Garantia;
   fotos?: unknown;
+  /** IDs de fotos já enviadas ao ML via /api/anuncios/upload-foto (upload do computador). */
+  foto_ids?: unknown;
   listing_type_id?: string;
   descricao?: string;
   /** Atributos extras da ficha (plano 032) — ex.: vindos do enriquecimento por GTIN. */
@@ -68,6 +70,15 @@ function ehUrlDeFoto(s: unknown): s is string {
   return typeof s === 'string' && /^https?:\/\/\S+$/i.test(s.trim());
 }
 
+/** IDs de foto já enviados via /api/anuncios/upload-foto — string não-vazia, teto 12. */
+function lerFotoIds(bruto: unknown): string[] {
+  if (!Array.isArray(bruto)) return [];
+  return bruto
+    .filter((s): s is string => typeof s === 'string' && s.trim() !== '')
+    .map((s) => s.trim())
+    .slice(0, 12);
+}
+
 /** Garantia -> `sale_terms` do ML. `nenhuma`/ausente => "Sem garantia". */
 function saleTerms(g: Garantia | undefined): { id: string; value_name: string }[] {
   const tempo = (g?.tempo ?? '').trim() || '90 dias';
@@ -100,6 +111,7 @@ export async function POST(req: Request) {
   const gtin = String(body.gtin ?? '').trim();
   const listingTypeId = String(body.listing_type_id ?? 'gold_special').trim();
   const fotos = Array.isArray(body.fotos) ? body.fotos.filter(ehUrlDeFoto).map((s) => s.trim()) : [];
+  const fotoIds = lerFotoIds(body.foto_ids);
   const descricao = limparParaDescricao(String(body.descricao ?? ''));
   const atributosExtra = lerAtributosExtra(body.atributos_extra);
   const origemFicha = String(body.origem_ficha ?? '').trim() || (atributosExtra.length ? 'gtin' : 'manual');
@@ -129,9 +141,9 @@ export async function POST(req: Request) {
   if (!marca || !modelo) {
     return NextResponse.json({ erro: 'Marca e modelo são obrigatórios.' }, { status: 400 });
   }
-  if (fotos.length === 0) {
+  if (fotos.length === 0 && fotoIds.length === 0) {
     return NextResponse.json(
-      { erro: 'Informe pelo menos uma URL de foto (http/https).' },
+      { erro: 'Informe pelo menos uma foto (URL ou enviada do computador).' },
       { status: 400 },
     );
   }
@@ -172,7 +184,9 @@ export async function POST(req: Request) {
     buying_mode: 'buy_it_now',
     listing_type_id: listingTypeId,
     condition: condicao,
-    pictures: fotos.map((source) => ({ source })),
+    // URLs primeiro, depois as enviadas do computador (upload-foto) — a primeira do array
+    // vira a capa no ML.
+    pictures: [...fotos.map((source) => ({ source })), ...fotoIds.map((id) => ({ id }))],
     sale_terms: saleTerms(body.garantia),
     attributes: atributos,
     // Mesma precaução do plano 019: o create do ML não documenta `status`, mas mandamos —
@@ -238,8 +252,9 @@ export async function POST(req: Request) {
     // 3. Confere se o ML aceitou todas as fotos enviadas — ele pode criar o item e mesmo assim
     //    descartar alguma foto que não conseguiu baixar (URL bloqueada, expirada, formato ruim),
     //    sem avisar em erro nenhum. Comparamos quantidade enviada x quantidade que voltou.
+    const totalFotos = fotos.length + fotoIds.length;
     const fotosAceitas = criado?.pictures?.length ?? 0;
-    const fotosRecusadas = fotos.length - fotosAceitas;
+    const fotosRecusadas = totalFotos - fotosAceitas;
 
     await registrar({
       status: 200,
@@ -251,7 +266,7 @@ export async function POST(req: Request) {
         erroDescricao,
         origem_ficha: origemFicha,
         atributos_extra: atributosExtra.length,
-        fotos_enviadas: fotos.length,
+        fotos_enviadas: totalFotos,
         fotos_aceitas: fotosAceitas,
       },
     });
@@ -272,7 +287,7 @@ export async function POST(req: Request) {
       ok: true,
       criado: { ...criado, status: 'paused' },
       erroDescricao,
-      fotosEnviadas: fotos.length,
+      fotosEnviadas: totalFotos,
       fotosAceitas,
       fotosRecusadas,
     });

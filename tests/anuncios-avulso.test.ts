@@ -241,4 +241,62 @@ describe('POST /api/anuncios/avulso', () => {
     }
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('aceita foto enviada do computador (foto_ids) mesmo sem nenhuma URL', async () => {
+    injetarCliente(() => makeFakeSupabase({ contas: [conta()], anuncio_criacoes: [] }).client as never);
+    let enviado: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).endsWith('/items') && init?.method === 'POST') {
+          enviado = JSON.parse(String(init.body));
+          return responseBody({ id: 'MLB666', status: 'paused', pictures: [{ id: 'PIC1' }] });
+        }
+        throw new Error('inesperado');
+      }),
+    );
+
+    const res = await criarAvulso(
+      new Request('http://local', {
+        method: 'POST',
+        body: JSON.stringify(corpo({ fotos: [], foto_ids: ['PIC1'] })),
+      }),
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.fotosEnviadas).toBe(1);
+    expect(json.fotosAceitas).toBe(1);
+    expect(enviado!.pictures).toEqual([{ id: 'PIC1' }]);
+  });
+
+  it('URL e foto_ids juntas: pictures leva as URLs primeiro, depois os ids', async () => {
+    injetarCliente(() => makeFakeSupabase({ contas: [conta()], anuncio_criacoes: [] }).client as never);
+    let enviado: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).endsWith('/items') && init?.method === 'POST') {
+          enviado = JSON.parse(String(init.body));
+          return responseBody({ id: 'MLB777', status: 'paused' });
+        }
+        throw new Error('inesperado');
+      }),
+    );
+
+    await criarAvulso(
+      new Request('http://local', {
+        method: 'POST',
+        body: JSON.stringify(corpo({ foto_ids: ['PIC1', 'PIC2'] })),
+      }),
+    );
+
+    expect(enviado!.pictures).toEqual([
+      { source: 'https://http2.mlstatic.com/foto1.jpg' },
+      { source: 'https://x/foto2.jpg' },
+      { id: 'PIC1' },
+      { id: 'PIC2' },
+    ]);
+  });
 });

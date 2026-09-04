@@ -60,6 +60,9 @@ export default function CriarAvulso({
   const [garantiaTipo, setGarantiaTipo] = useState<'vendedor' | 'fabrica' | 'nenhuma'>('vendedor');
   const [garantiaTempo, setGarantiaTempo] = useState('90 dias');
   const [fotosTexto, setFotosTexto] = useState('');
+  const [fotosEnviadas, setFotosEnviadas] = useState<{ id: string; nome: string }[]>([]);
+  const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [erroUploadFoto, setErroUploadFoto] = useState<string | null>(null);
   const [listingType, setListingType] = useState<'gold_special' | 'gold_pro'>('gold_special');
   const [descricao, setDescricao] = useState('');
 
@@ -118,10 +121,39 @@ export default function CriarAvulso({
     Number(quantidade) >= 1 &&
     !!marca.trim() &&
     !!modelo.trim() &&
-    fotos.length >= 1;
+    fotos.length + fotosEnviadas.length >= 1;
 
   const categoriaNome =
     sugestoes?.find((s) => s.category_id === categoryId.trim())?.category_name ?? undefined;
+
+  /** Sobe fotos do computador pro ML (uma de cada vez) e guarda os `picture_id` devolvidos. */
+  async function enviarFotosDoComputador(arquivos: FileList | null) {
+    if (!arquivos || arquivos.length === 0) return;
+    setEnviandoFoto(true);
+    setErroUploadFoto(null);
+    try {
+      for (const arquivo of Array.from(arquivos)) {
+        const form = new FormData();
+        form.append('seller_id', sellerId);
+        form.append('file', arquivo);
+        const res = await fetch('/api/anuncios/upload-foto', { method: 'POST', body: form });
+        const json = await res.json();
+        if (!res.ok || !json?.ok) {
+          setErroUploadFoto(`"${arquivo.name}": ${descreverErro(json)}`);
+          continue;
+        }
+        setFotosEnviadas((prev) => [...prev, { id: json.id as string, nome: arquivo.name }]);
+      }
+    } catch (e) {
+      setErroUploadFoto(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEnviandoFoto(false);
+    }
+  }
+
+  function removerFotoEnviada(id: string) {
+    setFotosEnviadas((prev) => prev.filter((f) => f.id !== id));
+  }
 
   async function preencherComIa() {
     if (titulo.trim().length < 10) return;
@@ -320,6 +352,7 @@ export default function CriarAvulso({
           gtin: gtin.trim(),
           garantia: { tipo: garantiaTipo, tempo: garantiaTempo.trim() },
           fotos,
+          foto_ids: fotosEnviadas.map((f) => f.id),
           listing_type_id: listingType,
           descricao: descricao.trim(),
           atributos_extra: (fichaGtin ?? [])
@@ -699,9 +732,52 @@ export default function CriarAvulso({
             style={{ width: '100%', fontFamily: 'inherit', resize: 'vertical' }}
           />
         </div>
-        <small>
-          <Selo semIcone>{fotos.length} foto{fotos.length === 1 ? '' : 's'} válida{fotos.length === 1 ? '' : 's'}</Selo>{' '}
-          A primeira vira a capa. Só URL de imagem já hospedada — upload de arquivo é outro passo.
+
+        <div style={{ marginTop: 12 }}>
+          <label className="btn pequeno" style={{ display: 'inline-block', cursor: 'pointer' }}>
+            {enviandoFoto ? 'Enviando…' : 'Ou escolher fotos do computador'}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={enviandoFoto || !sellerId}
+              onChange={(e) => {
+                enviarFotosDoComputador(e.target.files);
+                e.target.value = '';
+              }}
+              style={{ display: 'none' }}
+            />
+          </label>
+          {!sellerId ? <span> — escolha a conta primeiro.</span> : null}
+          {erroUploadFoto ? (
+            <p style={{ margin: '8px 0 0' }}>
+              <Selo nivel="critico">falha no envio</Selo> {erroUploadFoto}
+            </p>
+          ) : null}
+          {fotosEnviadas.length > 0 ? (
+            <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
+              {fotosEnviadas.map((f) => (
+                <li key={f.id} style={{ marginTop: 4 }}>
+                  {f.nome}{' '}
+                  <button
+                    type="button"
+                    className="btn pequeno"
+                    onClick={() => removerFotoEnviada(f.id)}
+                  >
+                    remover
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+
+        <small style={{ display: 'block', marginTop: 12 }}>
+          <Selo semIcone>
+            {fotos.length + fotosEnviadas.length} foto{fotos.length + fotosEnviadas.length === 1 ? '' : 's'} válida
+            {fotos.length + fotosEnviadas.length === 1 ? '' : 's'}
+          </Selo>{' '}
+          A primeira da lista (URLs, depois enviadas) vira a capa.
         </small>
       </Secao>
 
