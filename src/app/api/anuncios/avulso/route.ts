@@ -161,8 +161,9 @@ export async function POST(req: Request) {
     title: titulo,
     // `family_name` é obrigatório no modelo novo de publicação do ML pra anúncio FORA do
     // catálogo (agrupa o anúncio/variações). Sem ele o ML recusa com
-    // `body.required_fields ... [family_name]`. Máx 60 caracteres — o título já é <= 60.
-    family_name: titulo.slice(0, 60),
+    // `body.required_fields ... [family_name]`; se for IGUAL ao `title` o ML recusa com
+    // `body.invalid_fields`. Usamos marca + modelo (o "nome do produto"), teto de 60.
+    family_name: `${marca} ${modelo}`.slice(0, 60),
     category_id: categoryId,
     price: valor,
     currency_id: 'BRL',
