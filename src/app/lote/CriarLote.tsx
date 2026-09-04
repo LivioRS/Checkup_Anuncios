@@ -32,7 +32,17 @@ function lerItemIds(bruto: string): string[] {
   return [...new Set(limpos)];
 }
 
-export default function CriarLote({ contas }: { contas: Conta[] }) {
+export default function CriarLote({
+  contas,
+  base = '/api/lote',
+  rotaDetalhe = '/lote',
+}: {
+  contas: Conta[];
+  /** Prefixo das rotas de lote. Admin: `/api/lote` (padrão). Portal: `/api/portal/lote`. */
+  base?: string;
+  /** Prefixo da PÁGINA de detalhe pra onde redirecionar após criar. Admin: `/lote` (padrão). Portal: `/portal/lote`. */
+  rotaDetalhe?: string;
+}) {
   const router = useRouter();
   const [sellerId, setSellerId] = useState(contas[0]?.seller_id ?? '');
   const [tipo, setTipo] = useState<Tipo>('diagnostico');
@@ -46,7 +56,7 @@ export default function CriarLote({ contas }: { contas: Conta[] }) {
     setCriando(true);
     setErro(null);
     try {
-      const res = await fetch('/api/lote', {
+      const res = await fetch(base, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ seller_id: sellerId, item_ids: itemIds, tipo }),
@@ -56,7 +66,7 @@ export default function CriarLote({ contas }: { contas: Conta[] }) {
         setErro(descreverErro(json));
         return;
       }
-      router.push(`/lote/${json.lote_id}`);
+      router.push(`${rotaDetalhe}/${json.lote_id}`);
     } catch (e) {
       setErro(e instanceof Error ? e.message : String(e));
     } finally {

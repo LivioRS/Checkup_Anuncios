@@ -68,10 +68,19 @@ export default function AcompanharLote({
   loteId,
   loteInicial,
   itensIniciais,
+  base = '/api/lote',
+  rotaIndice = '/lote',
+  ferramentasInternas = true,
 }: {
   loteId: string;
   loteInicial: LoteComContagens;
   itensIniciais: LoteItem[];
+  /** Prefixo das rotas de lote. Admin: `/api/lote` (padrão). Portal: `/api/portal/lote`. */
+  base?: string;
+  /** Prefixo da página "Novo lote". Admin: `/lote` (padrão). Portal: `/portal/lote`. */
+  rotaIndice?: string;
+  /** Liga o link do item pra `/itens/{id}` (tela só-admin). O portal passa `false`. */
+  ferramentasInternas?: boolean;
 }) {
   const [lote, setLote] = useState(loteInicial);
   const [itens, setItens] = useState(itensIniciais);
@@ -84,7 +93,7 @@ export default function AcompanharLote({
     let cancelado = false;
 
     async function recarregarItens() {
-      const r = await fetch(`/api/lote/${loteId}/itens`);
+      const r = await fetch(`${base}/${loteId}/itens`);
       const j = await r.json();
       if (!cancelado && r.ok) setItens(j.itens ?? []);
     }
@@ -92,7 +101,7 @@ export default function AcompanharLote({
     async function tick() {
       if (cancelado) return;
       try {
-        const res = await fetch(`/api/lote/${loteId}/processar`, { method: 'POST' });
+        const res = await fetch(`${base}/${loteId}/processar`, { method: 'POST' });
         const novo = await res.json();
         if (cancelado) return;
         if (!res.ok) {
@@ -120,19 +129,19 @@ export default function AcompanharLote({
       cancelado = true;
       if (timer) clearTimeout(timer);
     };
-  }, [rodando, loteId]);
+  }, [rodando, loteId, base]);
 
   async function reenfileirar() {
     setErro(null);
     try {
-      const res = await fetch(`/api/lote/${loteId}/reenfileirar`, { method: 'POST' });
+      const res = await fetch(`${base}/${loteId}/reenfileirar`, { method: 'POST' });
       const json = await res.json();
       if (!res.ok) {
         setErro(descreverErro(json));
         return;
       }
       if (json.lote) setLote(json.lote as LoteComContagens);
-      const ri = await fetch(`/api/lote/${loteId}/itens`);
+      const ri = await fetch(`${base}/${loteId}/itens`);
       const ji = await ri.json();
       if (ri.ok) setItens(ji.itens ?? []);
       setRodando(true);
@@ -188,7 +197,7 @@ export default function AcompanharLote({
         ) : null}
       </Secao>
 
-      <Secao titulo={`Itens (${itens.length})`} acao={<Link className="btn pequeno" href="/lote">Novo lote</Link>}>
+      <Secao titulo={`Itens (${itens.length})`} acao={<Link className="btn pequeno" href={rotaIndice}>Novo lote</Link>}>
         {itens.length === 0 ? (
           <p className="vazio" style={{ margin: 0 }}>
             Nenhum item.
@@ -200,9 +209,13 @@ export default function AcompanharLote({
                 {itens.map((it) => (
                   <tr key={it.id}>
                     <td style={{ verticalAlign: 'top', width: 160 }}>
-                      <Link href={`/itens/${it.item_id}`} style={{ fontWeight: 550 }}>
-                        {it.item_id}
-                      </Link>
+                      {ferramentasInternas ? (
+                        <Link href={`/itens/${it.item_id}`} style={{ fontWeight: 550 }}>
+                          {it.item_id}
+                        </Link>
+                      ) : (
+                        <span style={{ fontWeight: 550 }}>{it.item_id}</span>
+                      )}
                       <div style={{ marginTop: 4 }}>
                         <Selo nivel={NIVEL_POR_STATUS[it.status]} semIcone>
                           {it.status}
