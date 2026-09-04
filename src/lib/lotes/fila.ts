@@ -41,6 +41,8 @@ export type Lote = {
   total_itens: number;
   status: 'em_andamento' | 'concluido';
   tipo: TipoLote;
+  /** Cliente do portal dono do lote (plano 035, f3c3). `null` = lote do admin (robôs). */
+  cliente_id: number | null;
 };
 
 export type LoteComContagens = Lote & {
@@ -51,6 +53,8 @@ export async function criarLote(input: {
   sellerId: string;
   itemIds: string[];
   tipo?: TipoLote;
+  /** Cliente do portal dono do lote (plano 035). Admin não passa → `cliente_id` null. */
+  clienteId?: number;
 }): Promise<{ loteId: string }> {
   if (input.itemIds.length === 0) throw new Error('Lote precisa de pelo menos um item.');
 
@@ -67,6 +71,7 @@ export async function criarLote(input: {
       seller_id: input.sellerId,
       total_itens: input.itemIds.length,
       tipo: input.tipo ?? 'diagnostico',
+      cliente_id: input.clienteId ?? null,
     });
   if (erroLote) throw new Error(`Falha ao criar lote: ${erroLote.message}`);
 
@@ -82,14 +87,18 @@ export async function buscarLote(loteId: string): Promise<LoteComContagens | nul
   const cliente = db();
   const { data: loteRows, error: erroLote } = await cliente
     .from('lotes')
-    .select('id, seller_id, total_itens, status, tipo')
+    .select('id, seller_id, total_itens, status, tipo, cliente_id')
     .eq('id', loteId)
     .limit(1);
   if (erroLote) throw new Error(`Falha ao buscar lote: ${erroLote.message}`);
   const bruto = loteRows?.[0] as (Omit<Lote, 'tipo'> & { tipo?: unknown }) | undefined;
   if (!bruto) return null;
-  // Lote antigo (pré-025) pode não ter `tipo`; o default do banco é 'diagnostico'.
-  const lote: Lote = { ...bruto, tipo: ehTipoLote(bruto.tipo) ? bruto.tipo : 'diagnostico' };
+  // Lote antigo (pré-025/035) pode não ter `tipo`/`cliente_id`; defaults: 'diagnostico' / null.
+  const lote: Lote = {
+    ...bruto,
+    tipo: ehTipoLote(bruto.tipo) ? bruto.tipo : 'diagnostico',
+    cliente_id: bruto.cliente_id ?? null,
+  };
 
   const { data: itens, error: erroItens } = await cliente
     .from('lote_itens')

@@ -196,3 +196,9 @@ alter table public.anuncio_criacoes
   add column if not exists cliente_id bigint references public.clientes(id);
 alter table public.ficha_edits
   add column if not exists cliente_id bigint references public.clientes(id);
+
+-- Plano 035: lote no portal do cliente (f3c3). Mesma decisão do 034 — service_role-only, zero
+-- policy nova: `lotes`/`lote_itens` continuam sem RLS, ownership garantida no handler
+-- (`src/lib/lotes/autorizacao.ts`), não no banco, porque o portal só lê/grava por rota.
+alter table public.lotes
+  add column if not exists cliente_id bigint references public.clientes(id);
