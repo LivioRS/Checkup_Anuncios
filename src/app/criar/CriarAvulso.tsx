@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Selo, Secao } from '@/components/ui';
+import { gtinChecksumOk } from '@/lib/gtin';
 
 type Conta = { id: number; seller_id: string; apelido: string | null; org: string | null };
 
@@ -38,6 +39,7 @@ function detalheErro(json: unknown): string | undefined {
     return undefined;
   }
 }
+
 
 const campo = { marginTop: 12 } as const;
 
@@ -121,6 +123,7 @@ export default function CriarAvulso({
     Number(quantidade) >= 1 &&
     !!marca.trim() &&
     !!modelo.trim() &&
+    gtinChecksumOk(gtin) !== false &&
     fotos.length + fotosEnviadas.length >= 1;
 
   const categoriaNome =
@@ -530,6 +533,13 @@ export default function CriarAvulso({
             </button>
           </div>
         </div>
+        {gtin.trim() && gtinChecksumOk(gtin) === false ? (
+          <p style={{ margin: '4px 0 0' }}>
+            <Selo nivel="critico">dígito verificador não bate</Selo> esse código não é um
+            GTIN/EAN válido — o Mercado Livre vai recusar com "invalid format". Confere no código
+            de barras real (a foto da etiqueta) e digita de novo.
+          </p>
+        ) : null}
         {fichaGtinMsg ? <small className="vazio">{fichaGtinMsg}</small> : null}
         {fichaGtinProdutoId && onTrocarParaCatalogo ? (
           <div className="card" style={{ marginTop: 8 }}>
