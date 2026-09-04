@@ -53,7 +53,7 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 031  | Provedor de IA plugável — OpenRouter OU Anthropic direto (sem plano próprio, mudança pequena) | P2 | S | — | DONE (branch `feat/openrouter-provider`) |
 | 032  | Enriquecer a ficha do anúncio avulso SEM agente — GTIN→catálogo (determinístico) + visão de um tiro sobre foto da etiqueta. Veredito do LLM Council. | P1 | M | 029, 030 | DONE (Partes A+B; branch `feat/032-ficha-gtin`. Parte C fora de escopo por decisão.) |
 | 033  | Rascunho de anúncio por IA — roteamento GTIN→catálogo, botão "Preencher com IA", ficha buscada no site do fabricante (web). 2 vereditos do LLM Council + decisão do Livio. | P1 | L | 029–032 | DONE (Partes A+B+C+D; branch `feat/033-rascunho-ia`) |
-| 034  | Levar "criar anúncio" (019, 029–033) pro portal do cliente — rotas `/api/portal/anuncios/**` via `comContaCliente`, página `/portal/criar` | P1 | L | 027, 028 | TODO (plano escrito — depende de 027 e 028 mergeados) |
+| 034  | Levar "criar anúncio" (019, 029–033) pro portal do cliente — rotas `/api/portal/anuncios/**` via `comContaCliente`, página `/portal/criar` | P1 | L | 027, 028 | DONE (branch `feat/034-portal-anuncios`, empilhado em 027+028 rebasados — §1, NÃO mergear 028 sem revisão) |
 
 ## Dependency notes
 
@@ -634,3 +634,71 @@ nem conexão de cliente neste ambiente (mesma natureza do teste manual pendente 
 
 **Desvio do plano**: branch `feat/f3c2-token-cliente` empilhado sobre `feat/fase3-conectar-conta`
 + commit + push + PR. **Não mergear sem revisão humana — é o §1.**
+
+## Status do 034 (2026-09-03, DONE — branch `feat/034-portal-anuncios`)
+
+O fluxo de criação de anúncio (catálogo + fora do catálogo + IA + ficha por GTIN/foto/web,
+planos 019/029–033) agora roda dentro de `/portal/*` pro cliente logado, operando na conexão ML
+que **ele** conectou (`contas_ml_clientes`, via `comContaCliente`). Zero mudança no fluxo admin.
+
+**Pré-requisitos (feitos nesta passada)**: `feat/fase3-conectar-conta` (027) e
+`feat/f3c2-token-cliente` (028) rebasados na `main` atual (`1c6f06f`, já com os PRs #7/#8). O
+rebase só teve conflito de documentação (`plans/README.md`), resolvido preservando as duas
+árvores. **028 é §1 — continua exigindo revisão humana antes de mergear**; `feat/034-portal-anuncios`
+está empilhado sobre ele. Os merges na `main` não foram feitos aqui (convenção de PR do repo +
+`origin/main` em movimento por outra sessão).
+
+**Adapter novo** — `src/lib/portal/contaAtiva.ts`: resolve a conexão ativa do cliente logado
+(sessão Supabase → `clientes.id` → `contas_ml_clientes`), **sempre** validando o `seller_id`
+pedido contra as conexões do próprio cliente (`seller_alheio` → 409; `sem_sessao` → 401;
+`sem_conexao` → 409). `resolverContaDoClienteLogado` devolve um executor que embrulha a chamada
+ao ML em `comContaCliente` — nunca `comConta`. Seam de teste `injetarResolvedorDeSessao`.
+
+**Refactor** — o corpo dos handlers admin de `/api/anuncios{,/avulso,/categoria,/ficha-por-gtin,
+/rascunho,/ia,/ficha-web}` e `/api/catalogo/buscar` saiu pra funções puras em
+`src/lib/anuncios/{avulso,catalogo,consultas,assistente}.ts`. A única variação entre admin e
+portal é "abrir escopo" (`comConta` × `comContaCliente`); payload, invariante de nascer `paused`
++ PUT de pausa e o log em `anuncio_criacoes` são um só. `tests/anuncios*.test.ts` (admin)
+**100% verdes, sem alteração** — era a STOP condition.
+
+**Rotas novas** — `src/app/api/portal/anuncios/**` (8): `route.ts` (catálogo), `avulso`,
+`categoria`, `ficha-por-gtin`, `catalogo/buscar`, `rascunho` (ML via `comContaCliente`); `ia`,
+`ficha-web` (não batem no ML — só gate de sessão). `seller_id` do corpo/query nunca é a
+identidade — só escolhe entre as conexões do cliente, e é validado.
+
+**Componentes** — `CriarModos`/`CriarAnuncio`/`CriarAvulso` ganharam `base` (default
+`/api/anuncios`) e `baseCatalogo` (default `/api/catalogo`); o portal passa
+`/api/portal/anuncios` e `/api/portal/anuncios/catalogo`. `ferramentasInternas={false}` no
+portal esconde o link "Padronizar as fotos" (tela `/itens/*`, só admin).
+
+**Página** — `src/app/portal/criar/page.tsx` (0 conexões → "Conecte uma conta do ML primeiro"
+com link pra `/api/portal/ml/conectar`; ≥1 → `CriarModos`). `/portal/painel` ganhou o botão
+"Criar anúncio".
+
+**Migração** (aditiva, nullable — entregar ao Livio pro SQL Editor; MCP de migração bloqueado):
+
+```sql
+alter table public.anuncio_criacoes add column if not exists cliente_id bigint references public.clientes(id);
+alter table public.ficha_edits add column if not exists cliente_id bigint references public.clientes(id);
+```
+
+`registrarCriacaoAnuncio`/`registrarEscrita` ganharam `clienteId?` opcional → `cliente_id` no
+insert (admin passa `undefined` → null). RLS dessas tabelas segue service_role-only, como no
+admin (fora de escopo: RLS por cliente — só quando houver tela de histórico do cliente).
+
+**Gate completo (AGENTS.md)**, rodado no worktree com `node_modules` do repo:
+`npm run build` / `lint` / `typecheck` / `verificar` / `test` — verdes, **120/120**
+(8 novos em `tests/portal-anuncios.test.ts`: `contaAtiva` isolado nos 3 erros; rota avulso do
+portal — 401 sem sessão sem tocar o ML, caminho feliz com token do CLIENTE + `cliente_id` no
+log + `seller_id` do corpo ignorado, 409 pra seller de outro cliente; gate de sessão de
+categoria/ia). `tests/anuncios*.test.ts` e `tests/token-*.test.ts` intocados.
+
+**Não testado** (mesma natureza dos planos 022–033): fluxo de navegador de verdade — depende de
+`ML_CLIENT_ID_PORTAL` + um cliente de teste com conexão em `contas_ml_clientes` no ambiente.
+
+**Fora de escopo** (do plano): lote no portal (f3c3), RLS por cliente de
+`anuncio_criacoes`/`ficha_edits`, branding do portal (f3c5), escrita de título/descrição em
+lote (segue a decisão do 025).
+
+**Desvio do plano**: os merges de 027/028 na `main` não foram feitos (ver acima); ficam pro
+Livio via PR, com 028 revisado à mão por ser §1.
