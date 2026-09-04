@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { mlFetch, MlError, comConta } from '@/lib/ml/client';
+import { motivoSemGtin } from '@/lib/ml/attributes';
 import { registrarCriacaoAnuncio } from '@/lib/auditoria';
 import { limparParaDescricao } from '@/lib/ia';
 
@@ -154,57 +155,68 @@ export async function POST(req: Request) {
     );
   }
 
-  const atributos: { id: string; value_name: string }[] = [
-    { id: 'BRAND', value_name: marca },
-    { id: 'MODEL', value_name: modelo },
-    gtin
-      ? { id: 'GTIN', value_name: gtin }
-      : { id: 'EMPTY_GTIN_REASON', value_name: 'Não possui código universal de produto' },
-  ];
-
-  // Atributos extras (plano 032) entram DEPOIS dos do form, sem duplicar id.
-  const idsUsados = new Set(atributos.map((a) => a.id.toUpperCase()));
-  for (const ex of atributosExtra) {
-    if (idsUsados.has(ex.id.toUpperCase())) continue;
-    idsUsados.add(ex.id.toUpperCase());
-    atributos.push(ex);
-  }
-
-  const payload = {
-    // Modelo novo de publicação do ML pra anúncio FORA do catálogo: manda-se `family_name`
-    // (o nome do produto) e o ML COMPÕE o título a partir dele + atributos. Sem `family_name`
-    // o ML recusa com `body.required_fields ... [family_name]`; COM `title` junto ele recusa
-    // com `body.invalid_fields` ("The fields [title] are invalid for requested call."). Por
-    // isso NÃO mandamos `title` — o `family_name` leva o texto que o vendedor digitou (<= 60).
-    family_name: titulo.slice(0, 60),
-    category_id: categoryId,
-    price: valor,
-    currency_id: 'BRL',
-    available_quantity: quantidade,
-    buying_mode: 'buy_it_now',
-    listing_type_id: listingTypeId,
-    condition: condicao,
-    // URLs primeiro, depois as enviadas do computador (upload-foto) — a primeira do array
-    // vira a capa no ML.
-    pictures: [...fotos.map((source) => ({ source })), ...fotoIds.map((id) => ({ id }))],
-    sale_terms: saleTerms(body.garantia),
-    attributes: atributos,
-    // Mesma precaução do plano 019: o create do ML não documenta `status`, mas mandamos —
-    // e o PUT de pausa abaixo garante o invariante se for ignorado.
-    status: 'paused',
-  };
-
-  const registrar = (args: { status: number; itemId?: string | null; response: unknown }) =>
-    registrarCriacaoAnuncio({
-      sellerId,
-      marca,
-      modelo,
-      codigo: gtin || null,
-      payload,
-      ...args,
-    });
-
   return comConta(sellerId, async () => {
+    // EMPTY_GTIN_REASON é atributo de lista fechada — texto livre é recusado com
+    // "Attribute [EMPTY_GTIN_REASON] is not valid" (visto na prática). Busca o value_id de
+    // verdade no schema da categoria; se ela nem tiver esse atributo, GTIN é obrigatório sem
+    // exceção — não manda nada e deixa o ML dizer isso claro (em vez de outro erro confuso).
+    let motivoGtin: { value_id: string; value_name: string } | null = null;
+    if (!gtin) {
+      motivoGtin = await motivoSemGtin(categoryId).catch(() => null);
+    }
+
+    const atributos: { id: string; value_id?: string; value_name?: string }[] = [
+      { id: 'BRAND', value_name: marca },
+      { id: 'MODEL', value_name: modelo },
+    ];
+    if (gtin) {
+      atributos.push({ id: 'GTIN', value_name: gtin });
+    } else if (motivoGtin) {
+      atributos.push({ id: 'EMPTY_GTIN_REASON', value_id: motivoGtin.value_id, value_name: motivoGtin.value_name });
+    }
+
+    // Atributos extras (plano 032) entram DEPOIS dos do form, sem duplicar id.
+    const idsUsados = new Set(atributos.map((a) => a.id.toUpperCase()));
+    for (const ex of atributosExtra) {
+      if (idsUsados.has(ex.id.toUpperCase())) continue;
+      idsUsados.add(ex.id.toUpperCase());
+      atributos.push(ex);
+    }
+
+    const payload = {
+      // Modelo novo de publicação do ML pra anúncio FORA do catálogo: manda-se `family_name`
+      // (o nome do produto) e o ML COMPÕE o título a partir dele + atributos. Sem `family_name`
+      // o ML recusa com `body.required_fields ... [family_name]`; COM `title` junto ele recusa
+      // com `body.invalid_fields` ("The fields [title] are invalid for requested call."). Por
+      // isso NÃO mandamos `title` — o `family_name` leva o texto que o vendedor digitou (<= 60).
+      family_name: titulo.slice(0, 60),
+      category_id: categoryId,
+      price: valor,
+      currency_id: 'BRL',
+      available_quantity: quantidade,
+      buying_mode: 'buy_it_now',
+      listing_type_id: listingTypeId,
+      condition: condicao,
+      // URLs primeiro, depois as enviadas do computador (upload-foto) — a primeira do array
+      // vira a capa no ML.
+      pictures: [...fotos.map((source) => ({ source })), ...fotoIds.map((id) => ({ id }))],
+      sale_terms: saleTerms(body.garantia),
+      attributes: atributos,
+      // Mesma precaução do plano 019: o create do ML não documenta `status`, mas mandamos —
+      // e o PUT de pausa abaixo garante o invariante se for ignorado.
+      status: 'paused',
+    };
+
+    const registrar = (args: { status: number; itemId?: string | null; response: unknown }) =>
+      registrarCriacaoAnuncio({
+        sellerId,
+        marca,
+        modelo,
+        codigo: gtin || null,
+        payload,
+        ...args,
+      });
+
     let criado: ItemCriado | null = null;
     try {
       criado = await mlFetch<ItemCriado>('/items', {

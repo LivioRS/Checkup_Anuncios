@@ -35,6 +35,12 @@ function setInCache<T>(cache: Map<string, CacheEntry<T>>, key: string, data: T) 
   cache.set(key, { data, expiresAt: Date.now() + TTL_MS });
 }
 
+/** Só para teste: os caches são um Map de módulo, então vazam entre `it()` do mesmo arquivo. */
+export function _limparCachesParaTeste(): void {
+  attrsCache.clear();
+  specsCache.clear();
+}
+
 /* ------------------------------------------------------------------ *
  * Busca de dados
  * ------------------------------------------------------------------ */
@@ -48,6 +54,28 @@ export async function getCategoryAttributes(categoryId: string) {
   const data = await mlFetch<CategoryAttribute[]>(`/categories/${categoryId}/attributes`);
   setInCache(attrsCache, key, data);
   return data;
+}
+
+/**
+ * Acha o `value_id` certo pra "não tenho GTIN" na categoria.
+ *
+ * `EMPTY_GTIN_REASON` é atributo de lista fechada — o ML espera `value_id`, texto livre em
+ * `value_name` sozinho é recusado com "Attribute [EMPTY_GTIN_REASON] is not valid" (visto na
+ * prática: plano 029, anúncio avulso). Se a categoria nem tiver esse atributo na lista, GTIN é
+ * obrigatório sem exceção pra ela — devolve `null` e quem chama decide o que fazer.
+ */
+export async function motivoSemGtin(
+  categoryId: string,
+): Promise<{ value_id: string; value_name: string } | null> {
+  const attrs = await getCategoryAttributes(categoryId);
+  const atributo = attrs.find((a) => a.id === 'EMPTY_GTIN_REASON');
+  const valores = atributo?.values ?? [];
+  if (!valores.length) return null;
+
+  const alvo =
+    valores.find((v) => /n[aã]o possui|does not apply|not apply/i.test(v.name ?? '')) ?? valores[0];
+  if (!alvo?.id) return null;
+  return { value_id: alvo.id, value_name: alvo.name ?? '' };
 }
 
 export async function getTechnicalSpecsInput(categoryId: string): Promise<SpecsInput> {

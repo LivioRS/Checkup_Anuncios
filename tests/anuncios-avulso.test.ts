@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeFakeSupabase } from './helpers/supabase-fake';
 import { injetarCliente } from '../src/lib/supabase';
 import { POST as criarAvulso } from '../src/app/api/anuncios/avulso/route';
+import { _limparCachesParaTeste } from '../src/lib/ml/attributes';
 
 /** Plano 029 — criar anúncio FORA do catálogo. Mesmo invariante do 019: nasce pausado, tudo logado. */
 
@@ -42,6 +43,7 @@ function corpo(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   process.env.ML_CLIENT_ID = 'test-client';
   process.env.ML_CLIENT_SECRET = 'test-secret';
+  _limparCachesParaTeste();
 });
 
 afterEach(() => {
@@ -57,6 +59,16 @@ describe('POST /api/anuncios/avulso', () => {
     let enviado: Record<string, unknown> | null = null;
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       const u = String(url);
+      if (u.includes('/categories/MLB9999/attributes')) {
+        return responseBody([
+          {
+            id: 'EMPTY_GTIN_REASON',
+            name: 'Motivo para não informar GTIN',
+            value_type: 'list',
+            values: [{ id: '242075', name: 'Não possui código universal de produto' }],
+          },
+        ]);
+      }
       if (u.endsWith('/items') && init?.method === 'POST') {
         enviado = JSON.parse(String(init.body));
         return responseBody({ id: 'MLB111', status: 'paused', permalink: 'https://x/MLB111' });
@@ -95,7 +107,8 @@ describe('POST /api/anuncios/avulso', () => {
     expect(enviado!.attributes).toEqual([
       { id: 'BRAND', value_name: 'XYZ' },
       { id: 'MODEL', value_name: 'TS-9' },
-      { id: 'EMPTY_GTIN_REASON', value_name: 'Não possui código universal de produto' },
+      // EMPTY_GTIN_REASON é lista fechada — precisa do value_id de verdade, não só texto.
+      { id: 'EMPTY_GTIN_REASON', value_id: '242075', value_name: 'Não possui código universal de produto' },
     ]);
     expect(enviado!.sale_terms).toEqual([
       { id: 'WARRANTY_TYPE', value_name: 'Garantia do vendedor' },
@@ -105,6 +118,33 @@ describe('POST /api/anuncios/avulso', () => {
     const log = writes.find((w) => w.table === 'anuncio_criacoes' && w.kind === 'insert');
     expect((log!.payload as Record<string, unknown>).catalog_product_id).toBeNull();
     expect((log!.payload as Record<string, unknown>).item_id).toBe('MLB111');
+  });
+
+  it('categoria sem EMPTY_GTIN_REASON no schema: não manda nada — GTIN é obrigatório sem exceção', async () => {
+    // Caso real: guitarra "spot model" sem GTIN nenhum, numa categoria que só aceita GTIN.
+    injetarCliente(() => makeFakeSupabase({ contas: [conta()], anuncio_criacoes: [] }).client as never);
+    let enviado: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/categories/MLB9999/attributes')) {
+          return responseBody([{ id: 'BRAND', name: 'Marca', value_type: 'string' }]); // sem EMPTY_GTIN_REASON
+        }
+        if (u.endsWith('/items') && init?.method === 'POST') {
+          enviado = JSON.parse(String(init.body));
+          return responseBody({ id: 'MLB888', status: 'paused' });
+        }
+        throw new Error(`inesperado: ${u}`);
+      }),
+    );
+
+    await criarAvulso(new Request('http://local', { method: 'POST', body: JSON.stringify(corpo()) }));
+
+    expect(enviado!.attributes).toEqual([
+      { id: 'BRAND', value_name: 'XYZ' },
+      { id: 'MODEL', value_name: 'TS-9' },
+    ]);
   });
 
   it('avisa quando o ML aceita o item mas descarta alguma foto (ex.: URL bloqueada)', async () => {

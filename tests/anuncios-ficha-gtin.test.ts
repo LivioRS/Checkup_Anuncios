@@ -3,6 +3,7 @@ import { makeFakeSupabase } from './helpers/supabase-fake';
 import { injetarCliente } from '../src/lib/supabase';
 import { GET as fichaGtinGET } from '../src/app/api/anuncios/ficha-por-gtin/route';
 import { POST as criarAvulso } from '../src/app/api/anuncios/avulso/route';
+import { _limparCachesParaTeste } from '../src/lib/ml/attributes';
 
 /** Plano 032, Parte A — enriquecimento determinístico da ficha por GTIN. */
 
@@ -27,6 +28,7 @@ function responseBody(json: unknown, status = 200) {
 beforeEach(() => {
   process.env.ML_CLIENT_ID = 'c';
   process.env.ML_CLIENT_SECRET = 's';
+  _limparCachesParaTeste();
 });
 
 afterEach(() => {
@@ -162,7 +164,18 @@ describe('POST /api/anuncios/avulso — atributos_extra', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (url: string, init?: RequestInit) => {
-        if (String(url).endsWith('/items') && init?.method === 'POST') {
+        const u = String(url);
+        if (u.includes('/categories/MLB9999/attributes')) {
+          return responseBody([
+            {
+              id: 'EMPTY_GTIN_REASON',
+              name: 'Motivo',
+              value_type: 'list',
+              values: [{ id: '242075', name: 'Não possui código universal de produto' }],
+            },
+          ]);
+        }
+        if (u.endsWith('/items') && init?.method === 'POST') {
           enviado = JSON.parse(String(init.body));
           return responseBody({ id: 'MLB2', status: 'paused' });
         }
@@ -174,7 +187,7 @@ describe('POST /api/anuncios/avulso — atributos_extra', () => {
     expect(enviado!.attributes).toEqual([
       { id: 'BRAND', value_name: 'XYZ' },
       { id: 'MODEL', value_name: 'OD-1' },
-      { id: 'EMPTY_GTIN_REASON', value_name: 'Não possui código universal de produto' },
+      { id: 'EMPTY_GTIN_REASON', value_id: '242075', value_name: 'Não possui código universal de produto' },
     ]);
   });
 
