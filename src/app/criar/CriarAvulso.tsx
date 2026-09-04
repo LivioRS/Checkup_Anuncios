@@ -91,7 +91,14 @@ export default function CriarAvulso({
 
   const [criando, setCriando] = useState(false);
   const [resultado, setResultado] = useState<
-    | { ok: true; id?: string; permalink?: string; erroDescricao?: unknown }
+    | {
+        ok: true;
+        id?: string;
+        permalink?: string;
+        erroDescricao?: unknown;
+        fotosEnviadas?: number;
+        fotosAceitas?: number;
+      }
     | { ok: false; msg: string; detalhe?: string }
     | null
   >(null);
@@ -331,6 +338,8 @@ export default function CriarAvulso({
         id: json?.criado?.id,
         permalink: json?.criado?.permalink,
         erroDescricao: json?.erroDescricao,
+        fotosEnviadas: json?.fotosEnviadas,
+        fotosAceitas: json?.fotosAceitas,
       });
     } catch (e) {
       setResultado({ ok: false, msg: e instanceof Error ? e.message : String(e) });
@@ -815,6 +824,18 @@ export default function CriarAvulso({
                 <p style={{ margin: '8px 0 0' }}>
                   <Selo nivel="atencao">a descrição não gravou</Selo> o anúncio foi criado; ajuste
                   a descrição pela tela de Descrição.
+                </p>
+              ) : null}
+              {typeof resultado.fotosAceitas === 'number' &&
+              typeof resultado.fotosEnviadas === 'number' &&
+              resultado.fotosAceitas < resultado.fotosEnviadas ? (
+                <p style={{ margin: '8px 0 0' }}>
+                  <Selo nivel="critico">
+                    {resultado.fotosAceitas} de {resultado.fotosEnviadas} fotos carregaram
+                  </Selo>{' '}
+                  o ML não conseguiu baixar {resultado.fotosEnviadas - resultado.fotosAceitas}{' '}
+                  foto(s) — confira se a URL abre direto no navegador (sem login) e sobe de novo
+                  no ML.
                 </p>
               ) : null}
             </>

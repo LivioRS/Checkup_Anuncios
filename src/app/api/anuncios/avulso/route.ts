@@ -61,7 +61,8 @@ function lerAtributosExtra(bruto: unknown): { id: string; value_name: string }[]
     .slice(0, 40);
 }
 
-type ItemCriado = { id?: string; status?: string; permalink?: string };
+type FotoMl = { id?: string; url?: string; secure_url?: string; size?: string; max_size?: string };
+type ItemCriado = { id?: string; status?: string; permalink?: string; pictures?: FotoMl[] };
 
 function ehUrlDeFoto(s: unknown): s is string {
   return typeof s === 'string' && /^https?:\/\/\S+$/i.test(s.trim());
@@ -234,6 +235,12 @@ export async function POST(req: Request) {
       }
     }
 
+    // 3. Confere se o ML aceitou todas as fotos enviadas — ele pode criar o item e mesmo assim
+    //    descartar alguma foto que não conseguiu baixar (URL bloqueada, expirada, formato ruim),
+    //    sem avisar em erro nenhum. Comparamos quantidade enviada x quantidade que voltou.
+    const fotosAceitas = criado?.pictures?.length ?? 0;
+    const fotosRecusadas = fotos.length - fotosAceitas;
+
     await registrar({
       status: 200,
       itemId: criado?.id ?? null,
@@ -244,6 +251,8 @@ export async function POST(req: Request) {
         erroDescricao,
         origem_ficha: origemFicha,
         atributos_extra: atributosExtra.length,
+        fotos_enviadas: fotos.length,
+        fotos_aceitas: fotosAceitas,
       },
     });
 
@@ -263,6 +272,9 @@ export async function POST(req: Request) {
       ok: true,
       criado: { ...criado, status: 'paused' },
       erroDescricao,
+      fotosEnviadas: fotos.length,
+      fotosAceitas,
+      fotosRecusadas,
     });
   });
 }

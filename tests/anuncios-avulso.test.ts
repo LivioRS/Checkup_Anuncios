@@ -107,6 +107,32 @@ describe('POST /api/anuncios/avulso', () => {
     expect((log!.payload as Record<string, unknown>).item_id).toBe('MLB111');
   });
 
+  it('avisa quando o ML aceita o item mas descarta alguma foto (ex.: URL bloqueada)', async () => {
+    injetarCliente(() => makeFakeSupabase({ contas: [conta()], anuncio_criacoes: [] }).client as never);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (String(url).endsWith('/items') && init?.method === 'POST') {
+          // Enviamos 2 fotos válidas (ver `corpo()`), mas o ML só aceitou 1.
+          return responseBody({
+            id: 'MLB555',
+            status: 'paused',
+            pictures: [{ id: 'p1', url: 'https://http2.mlstatic.com/foto1.jpg' }],
+          });
+        }
+        throw new Error('inesperado');
+      }),
+    );
+
+    const res = await criarAvulso(new Request('http://local', { method: 'POST', body: JSON.stringify(corpo()) }));
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.ok).toBe(true);
+    expect(json.fotosEnviadas).toBe(2);
+    expect(json.fotosAceitas).toBe(1);
+    expect(json.fotosRecusadas).toBe(1);
+  });
+
   it('manda GTIN quando informado', async () => {
     injetarCliente(() => makeFakeSupabase({ contas: [conta()], anuncio_criacoes: [] }).client as never);
     let enviado: Record<string, unknown> | null = null;
