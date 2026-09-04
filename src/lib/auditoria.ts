@@ -41,6 +41,8 @@ export async function registrarEscrita(params: {
   payload: EscritaPayload;
   antes: EscritaAntes;
   status: number;
+  /** Cliente do portal dono da escrita (plano 034). Admin passa `undefined` → `cliente_id` null. */
+  clienteId?: number;
 }): Promise<void> {
   try {
     await db()
@@ -51,6 +53,7 @@ export async function registrarEscrita(params: {
         payload: params.payload,
         before: params.antes,
         status: params.status,
+        cliente_id: params.clienteId ?? null,
       })
       .then(
         () => {},
@@ -75,6 +78,8 @@ export async function registrarCriacaoAnuncio(params: {
   codigo?: string | null;
   /** String no fluxo de catálogo (plano 019); ausente no anúncio avulso (plano 029). */
   catalogProductId?: string | null;
+  /** Cliente do portal que criou o anúncio (plano 034). Admin passa `undefined` → `cliente_id` null. */
+  clienteId?: number;
   payload: unknown;
   status: number;
   itemId?: string | null;
@@ -89,6 +94,7 @@ export async function registrarCriacaoAnuncio(params: {
         modelo: params.modelo ?? null,
         codigo: params.codigo ?? null,
         catalog_product_id: params.catalogProductId ?? null,
+        cliente_id: params.clienteId ?? null,
         payload: params.payload,
         status: params.status,
         item_id: params.itemId ?? null,

@@ -186,3 +186,13 @@ create policy "cliente vê as próprias conexões ml" on public.contas_ml_client
         and c.auth_user_id = auth.uid()
     )
   );
+
+-- Plano 034: "criar anúncio" no portal do cliente. Os logs de criação/escrita ganham
+-- `cliente_id` (aditivo, nullable — o fluxo admin dos robôs continua gravando `cliente_id` null;
+-- só o portal preenche). RLS dessas tabelas segue service_role-only (zero policy), como no admin:
+-- o portal lê/grava por rota, nunca direto. Aplicar no banco real via SQL Editor do Supabase
+-- (a ferramenta de migração do MCP fica bloqueada nesta sessão).
+alter table public.anuncio_criacoes
+  add column if not exists cliente_id bigint references public.clientes(id);
+alter table public.ficha_edits
+  add column if not exists cliente_id bigint references public.clientes(id);
