@@ -146,6 +146,43 @@ function idsDeItemNoJson(obj: unknown): string[] {
   return [...achados];
 }
 
+export type Pendente = { id: string; titulo: string | null; status: string | null; permalink: string | null };
+
+/**
+ * Anúncios pausados da conta — pra ter um lugar só onde olhar tudo que está
+ * esperando revisão (criados por este painel ou não). Chama `comConta` do
+ * chamador: aqui só busca, precisa já estar no escopo da conta certa.
+ */
+export async function listarPendentes(sellerId: string, limite = 50): Promise<Pendente[]> {
+  const p = new URLSearchParams({ status: 'paused', limit: String(Math.min(limite, 50)) });
+  const busca = await mlFetch<SearchResult>(`/users/${sellerId}/items/search?${p.toString()}`);
+  const ids = busca.results ?? [];
+  if (!ids.length) return [];
+
+  // O multiget aceita no máximo ~20 ids por chamada — divide em lotes.
+  const lotes: string[][] = [];
+  for (let i = 0; i < ids.length; i += 20) lotes.push(ids.slice(i, i + 20));
+
+  const paginas = await Promise.all(
+    lotes.map((lote) => {
+      const pp = new URLSearchParams({ ids: lote.join(','), attributes: 'id,title,status,permalink' });
+      return mlFetch<{ code: number; body: { id: string; title?: string; status?: string; permalink?: string } }[]>(
+        `/items?${pp.toString()}`,
+      );
+    }),
+  );
+
+  return paginas
+    .flat()
+    .filter((e) => e.code === 200)
+    .map((e) => ({
+      id: e.body.id,
+      titulo: e.body.title ?? null,
+      status: e.body.status ?? null,
+      permalink: e.body.permalink ?? null,
+    }));
+}
+
 /** Multiget enxuto para completar títulos: 1 chamada, no máximo 20 IDs. */
 export async function resumoDosItens(ids: string[]): Promise<Achado[]> {
   if (!ids.length) return [];
