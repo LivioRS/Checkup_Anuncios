@@ -94,6 +94,10 @@ export default function CriarAvulso({
   const [buscandoFichaWeb, setBuscandoFichaWeb] = useState(false);
   const [preenchidoPorIa, setPreenchidoPorIa] = useState(false);
 
+  // Busca de EAN/GTIN na web (IA) — complemento do plano 029.
+  const [buscandoEan, setBuscandoEan] = useState(false);
+  const [eanMsg, setEanMsg] = useState<string | null>(null);
+
   const [criando, setCriando] = useState(false);
   const [resultado, setResultado] = useState<
     | {
@@ -222,6 +226,34 @@ export default function CriarAvulso({
       setFichaWebMsg(e instanceof Error ? e.message : String(e));
     } finally {
       setBuscandoFichaWeb(false);
+    }
+  }
+
+  async function buscarEan() {
+    if (titulo.trim().length < 5 && !(marca.trim() && modelo.trim())) return;
+    setBuscandoEan(true);
+    setEanMsg(null);
+    try {
+      const res = await fetch('/api/anuncios/buscar-ean', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ titulo: titulo.trim(), marca: marca.trim(), modelo: modelo.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setEanMsg(json?.erro ?? 'Falha ao buscar na web.');
+        return;
+      }
+      if (json.ean) {
+        setGtin(json.ean);
+        setEanMsg(`Achado: ${json.ean} — confira antes de criar o anúncio.`);
+      } else {
+        setEanMsg(json.aviso ?? 'Nada encontrado.');
+      }
+    } catch (e) {
+      setEanMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBuscandoEan(false);
     }
   }
 
@@ -531,8 +563,17 @@ export default function CriarAvulso({
             >
               {buscandoFicha ? 'Buscando…' : 'Buscar ficha pelo código'}
             </button>
+            <button
+              type="button"
+              className="btn pequeno"
+              onClick={buscarEan}
+              disabled={buscandoEan || (titulo.trim().length < 5 && !(marca.trim() && modelo.trim()))}
+            >
+              {buscandoEan ? 'Buscando…' : 'Buscar EAN na web (IA)'}
+            </button>
           </div>
         </div>
+        {eanMsg ? <small className="vazio">{eanMsg}</small> : null}
         {gtin.trim() && gtinChecksumOk(gtin) === false ? (
           <p style={{ margin: '4px 0 0' }}>
             <Selo nivel="critico">dígito verificador não bate</Selo> esse código não é um
