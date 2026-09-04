@@ -832,8 +832,12 @@ export default function CriarAvulso({
                       padding: 8,
                       overflow: 'auto',
                       fontSize: 12,
-                      background: 'var(--fundo-sutil, #f4f4f5)',
+                      color: '#f4f4f5',
+                      background: '#1e1e1e',
+                      border: '1px solid #3f3f46',
                       borderRadius: 6,
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
                     }}
                   >
                     {resultado.detalhe}

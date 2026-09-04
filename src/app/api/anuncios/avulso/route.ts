@@ -158,12 +158,12 @@ export async function POST(req: Request) {
   }
 
   const payload = {
-    title: titulo,
-    // `family_name` é obrigatório no modelo novo de publicação do ML pra anúncio FORA do
-    // catálogo (agrupa o anúncio/variações). Sem ele o ML recusa com
-    // `body.required_fields ... [family_name]`; se for IGUAL ao `title` o ML recusa com
-    // `body.invalid_fields`. Usamos marca + modelo (o "nome do produto"), teto de 60.
-    family_name: `${marca} ${modelo}`.slice(0, 60),
+    // Modelo novo de publicação do ML pra anúncio FORA do catálogo: manda-se `family_name`
+    // (o nome do produto) e o ML COMPÕE o título a partir dele + atributos. Sem `family_name`
+    // o ML recusa com `body.required_fields ... [family_name]`; COM `title` junto ele recusa
+    // com `body.invalid_fields` ("The fields [title] are invalid for requested call."). Por
+    // isso NÃO mandamos `title` — o `family_name` leva o texto que o vendedor digitou (<= 60).
+    family_name: titulo.slice(0, 60),
     category_id: categoryId,
     price: valor,
     currency_id: 'BRL',

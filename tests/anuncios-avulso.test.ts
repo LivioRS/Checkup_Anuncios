@@ -73,8 +73,7 @@ describe('POST /api/anuncios/avulso', () => {
     expect(json.criado.status).toBe('paused');
 
     expect(enviado).toMatchObject({
-      title: 'Pedal de Guitarra Overdrive XYZ Tube Screamer',
-      family_name: 'XYZ TS-9',
+      family_name: 'Pedal de Guitarra Overdrive XYZ Tube Screamer',
       category_id: 'MLB9999',
       price: 349.9,
       currency_id: 'BRL',
@@ -85,8 +84,8 @@ describe('POST /api/anuncios/avulso', () => {
       status: 'paused',
     });
     expect((enviado!.family_name as string).length).toBeLessThanOrEqual(60);
-    // family_name NUNCA pode ser igual ao title (ML recusa com body.invalid_fields).
-    expect(enviado!.family_name).not.toBe(enviado!.title);
+    // No modelo novo do ML, `title` NÃO vai no corpo — o ML compõe pelo family_name.
+    expect(enviado).not.toHaveProperty('title');
     expect(enviado).not.toHaveProperty('catalog_listing');
     // URL inválida é descartada; sobram 2 fotos.
     expect((enviado!.pictures as unknown[])).toEqual([
