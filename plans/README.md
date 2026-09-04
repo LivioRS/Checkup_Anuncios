@@ -54,6 +54,7 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 032  | Enriquecer a ficha do anúncio avulso SEM agente — GTIN→catálogo (determinístico) + visão de um tiro sobre foto da etiqueta. Veredito do LLM Council. | P1 | M | 029, 030 | DONE (Partes A+B; branch `feat/032-ficha-gtin`. Parte C fora de escopo por decisão.) |
 | 033  | Rascunho de anúncio por IA — roteamento GTIN→catálogo, botão "Preencher com IA", ficha buscada no site do fabricante (web). 2 vereditos do LLM Council + decisão do Livio. | P1 | L | 029–032 | DONE (Partes A+B+C+D; branch `feat/033-rascunho-ia`) |
 | 034  | Levar "criar anúncio" (019, 029–033) pro portal do cliente — rotas `/api/portal/anuncios/**` via `comContaCliente`, página `/portal/criar` | P1 | L | 027, 028 | DONE (branch `feat/034-portal-anuncios`, empilhado em 027+028 rebasados — §1, NÃO mergear 028 sem revisão) |
+| 035  | Lote no portal do cliente (kanban Fase 3, f3c3) — rotas `/api/portal/lote/**` via `comContaCliente`, páginas `/portal/lote` e `/portal/lote/[id]` | P1 | M | 026, 028 | DONE (branch `feat/035-lote-portal`, empilhado em 026 rebasado) |
 
 ## Dependency notes
 
@@ -738,3 +739,68 @@ tem teste unitário (o repo não usa React Testing Library; padrão é testar l�
 
 **Desvio do plano**: nenhum — branch (`feat/f2c3-tela-progresso-lote`, empilhado sobre o do 025)
 + commit + push + PR.
+
+## Status do 035 (2026-09-04, DONE — branch `feat/035-lote-portal`)
+
+Card f3c3 do roteiro da Fase 3: operação em lote (diagnóstico/título/descrição, planos 024–026)
+agora roda dentro de `/portal/*` pro cliente logado, na conta ML que **ele** conectou
+(`contas_ml_clientes`, via `comContaCliente`). Zero mudança no fluxo admin (`/lote`).
+
+**Pré-requisito**: `feat/f2c3-tela-progresso-lote` (026) — que trouxe a TELA de lote (sem ela só
+existia via `curl`) — rebasado nesta mesma passada na `main` atual (027+028+034 já mergeados).
+Único conflito: `plans/README.md` (linha duplicada do 026) + `.gitignore` (mesma entrada
+`PRbody.md` de dois jeitos). `feat/035-lote-portal` está empilhado sobre ele.
+
+**`fila.ts`** — `criarLote` ganha `clienteId?`; `Lote`/`LoteComContagens` ganham
+`cliente_id: number | null`.
+
+**Adapter novo** — `src/lib/lotes/autorizacao.ts` (`loteDoCliente(loteId, clienteId)`): busca o
+lote e devolve `null` se não existir OU se `cliente_id` não bater com o da sessão — as 4 rotas
+do portal devolvem 404 nos dois casos, sem revelar qual dos dois é (não confirma pra um cliente
+que um `lote_id` alheio existe).
+
+**Refactor** — o worker (`processarItem` + laço de `proximosPendentes`/`marcarConcluido`/
+`marcarErro`/`marcarParaRetentar`/`fecharSeCompleto`) saiu de `POST /api/lote/[id]/processar`
+pra `src/lib/lotes/processarNucleo.ts` (`processarPassoDoLote`). A rota admin vira wrapper fino;
+a do portal resolve `clienteLogadoId()` ANTES de chamar o núcleo e devolve um `NextResponse` 404
+de dentro do `resolverEscopo` se `lote.cliente_id` não bater — o núcleo nunca chega a rodar
+`comContaCliente` num lote que não é do cliente. **`tests/lotes*.test.ts`/`lote-tela.test.ts`
+(admin) 100% verdes, sem alteração** — STOP condition.
+
+**5 rotas novas** `src/app/api/portal/lote/**`: `route.ts` (criar — `seller_id`/`cliente_id` da
+sessão, nunca do corpo), `[id]/route.ts`, `[id]/itens/route.ts`, `[id]/processar/route.ts`
+(`comContaCliente`), `[id]/reenfileirar/route.ts`. `sem_sessao` → 401; lote inexistente/alheio →
+404.
+
+**Componentes** — `CriarLote` ganha `base`/`rotaDetalhe`; `AcompanharLote` ganha
+`base`/`rotaIndice`/`ferramentasInternas` (esconde o link do item pra `/itens/{id}`, tela
+só-admin, mostrando só o código). Admin inalterado — só a URL virou parametrizável.
+
+**Páginas** — `src/app/portal/lote/page.tsx` (0 conexões → "conecte uma conta"; ≥1 →
+`CriarLote`) e `src/app/portal/lote/[id]/page.tsx` (usa `loteDoCliente`, não `buscarLote`
+direto — lote alheio cai na MESMA tela de "não encontrado" que um id inexistente).
+`/portal/painel` ganhou o botão "Operação em lote" ao lado de "Criar anúncio".
+
+**Migração** (aditiva, nullable — entregar ao Livio pro SQL Editor; MCP de migração bloqueado):
+
+```sql
+alter table public.lotes add column if not exists cliente_id bigint references public.clientes(id);
+```
+
+**Sem RLS nova** — decisão deliberada (documentada no plano): mesmo padrão que 034 já
+estabeleceu pra `anuncio_criacoes`/`ficha_edits` — `lotes`/`lote_itens` seguem
+service_role-only, ownership garantida na rota (`loteDoCliente`), não no banco, porque nenhuma
+página do portal lê essas tabelas direto com o cliente Supabase da sessão.
+
+**Gate completo (AGENTS.md)**, rodado no worktree com `node_modules` do repo: `npm run build` /
+`lint` / `typecheck` / `verificar` / `test` — verdes, **136/136** (9 novos em
+`tests/portal-lote.test.ts`: criar lote sem sessão/com sessão/seller alheio; GET lote
+alheio×próprio; processar lote alheio (404, sem chamar o ML) × próprio (token do CLIENTE,
+`cliente_id`); reenfileirar sem sessão/alheio). `tests/lotes.test.ts`,
+`tests/lote-titulo-descricao.test.ts` e `tests/lote-tela.test.ts` (admin) intocados.
+
+**Não testado** (mesma natureza de 022–034): fluxo de navegador de verdade — depende de
+`ML_CLIENT_ID_PORTAL` + cliente de teste com conexão em `contas_ml_clientes`.
+
+**Fora de escopo** (do plano): tela de listagem "meus lotes" (nem o admin tem); RLS por cliente
+de `lotes`/`lote_itens` (ver decisão acima).
