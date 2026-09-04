@@ -63,6 +63,14 @@ export default async function PortalPainelPage({
             </div>
           ) : null}
 
+          {conexoes.length > 0 ? (
+            <p style={{ marginBottom: 16 }}>
+              <a className="btn primary" href="/portal/criar">
+                Criar anúncio
+              </a>
+            </p>
+          ) : null}
+
           <Secao
             titulo="Contas do Mercado Livre conectadas"
             acao={
