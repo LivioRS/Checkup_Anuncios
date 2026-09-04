@@ -72,8 +72,13 @@ export async function motivoSemGtin(
   const valores = atributo?.values ?? [];
   if (!valores.length) return null;
 
+  // Conferido na API de verdade (GET /categories/MLB438516/attributes): o ML fala "não TEM
+  // código cadastrado", não "não possui" — o regex antigo não batia com nenhuma das 4 opções
+  // e caía no values[0] ERRADO ("peça artesanal"), que não é o motivo do vendedor.
   const alvo =
-    valores.find((v) => /n[aã]o possui|does not apply|not apply/i.test(v.name ?? '')) ?? valores[0];
+    valores.find((v) =>
+      /n[aã]o (tem|possui)|sem c[oó]digo|does not apply|not apply|no code/i.test(v.name ?? ''),
+    ) ?? valores[0];
   if (!alvo?.id) return null;
   return { value_id: alvo.id, value_name: alvo.name ?? '' };
 }

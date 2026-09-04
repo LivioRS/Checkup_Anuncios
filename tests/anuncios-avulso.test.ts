@@ -147,6 +147,48 @@ describe('POST /api/anuncios/avulso', () => {
     ]);
   });
 
+  it('escolhe "não tem código cadastrado" entre os 4 motivos reais do ML — não o primeiro da lista', async () => {
+    // Dados conferidos na API de verdade (GET /categories/MLB438516/attributes): a frase é
+    // "não TEM código cadastrado", não "não possui" — bug real que mandava o motivo errado
+    // ("peça artesanal", o values[0]) pro ML.
+    injetarCliente(() => makeFakeSupabase({ contas: [conta()], anuncio_criacoes: [] }).client as never);
+    let enviado: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.includes('/categories/MLB9999/attributes')) {
+          return responseBody([
+            {
+              id: 'EMPTY_GTIN_REASON',
+              name: 'Motivo de GTIN vazio',
+              value_type: 'list',
+              values: [
+                { id: '17055158', name: 'O produto é uma peça artesanal' },
+                { id: '17055159', name: 'O produto é um kit ou pack' },
+                { id: '17055160', name: 'O produto não tem código cadastrado' },
+                { id: '17055161', name: 'Outro motivo' },
+              ],
+            },
+          ]);
+        }
+        if (u.endsWith('/items') && init?.method === 'POST') {
+          enviado = JSON.parse(String(init.body));
+          return responseBody({ id: 'MLB999', status: 'paused' });
+        }
+        throw new Error(`inesperado: ${u}`);
+      }),
+    );
+
+    await criarAvulso(new Request('http://local', { method: 'POST', body: JSON.stringify(corpo()) }));
+
+    expect(enviado!.attributes).toContainEqual({
+      id: 'EMPTY_GTIN_REASON',
+      value_id: '17055160',
+      value_name: 'O produto não tem código cadastrado',
+    });
+  });
+
   it('avisa quando o ML aceita o item mas descarta alguma foto (ex.: URL bloqueada)', async () => {
     injetarCliente(() => makeFakeSupabase({ contas: [conta()], anuncio_criacoes: [] }).client as never);
     vi.stubGlobal(
