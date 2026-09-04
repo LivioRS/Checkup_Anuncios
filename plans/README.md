@@ -45,11 +45,15 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 023  | Login de cliente com RLS de verdade, Supabase Auth em `/portal/*` (kanban "Do Anúncio ao Portal" f1c4) | P1 | L | 021, 022 | DONE |
 | 024  | Fila e worker assíncrono pra operações em lote (kanban "Do Anúncio ao Portal" f2c1) | P1 | M | 020 | DONE |
 | 025  | Estender o lote pra título/descrição, só geração — gravação continua manual/revisada (kanban "Do Anúncio ao Portal" f2c2) | P1 | M | 024 | DONE |
+| 026  | Tela de progresso do lote — criar/acompanhar pela UI, tique-taque, "repetir o que falhou" (kanban "Do Anúncio ao Portal" f2c3) | P1 | M | 024, 025 | DONE (branch `feat/f2c3-tela-progresso-lote`) |
+| 027  | Roteiro da Fase 3 (portal público) + f3c0 (bug middleware) + f3c1 (cliente conecta a própria conta ML) | P1 | L | 022, 023 | ROTEIRO + f3c0/f3c1 DONE; f3c2 DONE (028); f3c3+ aguardam decisões |
+| 028  | Camada de token pra conta ML de cliente do portal — `comContaCliente`, refresh de uso único em `contas_ml_clientes` (kanban Fase 3, f3c2) | P1 | L | 027 | DONE (branch `feat/f3c2-token-cliente` — §1, NÃO mergear sem revisão) |
 | 029  | Criar anúncio FORA do catálogo (produto sem PDP / lançamento) — era o fallback adiado do 019 | P1 | L | 019 | DONE (branch `feat/anuncio-fora-catalogo`) |
 | 030  | IA no anúncio fora do catálogo — descrição, escolha de categoria e roteiro de fotos | P1 | M | 029 | DONE (branch `feat/029-ia-avulso`) |
 | 031  | Provedor de IA plugável — OpenRouter OU Anthropic direto (sem plano próprio, mudança pequena) | P2 | S | — | DONE (branch `feat/openrouter-provider`) |
 | 032  | Enriquecer a ficha do anúncio avulso SEM agente — GTIN→catálogo (determinístico) + visão de um tiro sobre foto da etiqueta. Veredito do LLM Council. | P1 | M | 029, 030 | DONE (Partes A+B; branch `feat/032-ficha-gtin`. Parte C fora de escopo por decisão.) |
 | 033  | Rascunho de anúncio por IA — roteamento GTIN→catálogo, botão "Preencher com IA", ficha buscada no site do fabricante (web). 2 vereditos do LLM Council + decisão do Livio. | P1 | L | 029–032 | DONE (Partes A+B+C+D; branch `feat/033-rascunho-ia`) |
+| 034  | Levar "criar anúncio" (019, 029–033) pro portal do cliente — rotas `/api/portal/anuncios/**` via `comContaCliente`, página `/portal/criar` | P1 | L | 027, 028 | DONE (branch `feat/034-portal-anuncios`, empilhado em 027+028 rebasados — §1, NÃO mergear 028 sem revisão) |
 
 ## Dependency notes
 
@@ -547,3 +551,154 @@ no `.env.local`. Aí `/criar` → Fora do catálogo → título → "Preencher c
 
 **Desvio do plano**: branch `feat/033-rascunho-ia` empilhado sobre `feat/032-ficha-gtin`.
 Parte A commitada separada (`f91e06d`); B+C+D num commit. Push + PR.
+
+## Status do 027 (2026-09-03) — roteiro da Fase 3 + f3c0 + f3c1
+
+`plans/027-fase-3-roteiro.md` é um **roteiro**, não um card: quebra a Fase 3 (portal público) em
+f3c0–f3c6, separa o mecânico do que depende de decisão de produto sua, e registra o buraco
+central (não existe caminho pra rodar o motor no nome de um cliente do portal — `client.ts` só
+conhece a tabela `contas`). **f3c2+ não foram implementados** — aguardam suas respostas às 5
+decisões de produto no fim do roteiro.
+
+Implementados nesta passada os dois cards mecânicos e de baixo risco:
+
+**f3c0 — bug do middleware** (achado na pesquisa): `/api/portal/completar-cadastro` e
+`/api/portal/logout` não começam com `/portal`, então caíam no gate do `PANEL_PASSWORD` e eram
+redirecionados (302) pra `/login` — logout falhava calado e o cadastro self-service quebrava no
+passo 2 em produção. Provável razão de não ter pego antes: o "fluxo de browser de verdade" do
+plano 023 nunca foi testado (STOP condition do 023). Correção: `middleware()` roteia
+`/portal/*` **e** `/api/portal/*` por `tratarRotaPortal`; sem sessão numa rota `/api/`, responde
+`401` JSON em vez de redirect.
+
+**f3c1 — cliente conecta a própria conta ML pelo portal**:
+- `src/lib/ml/oauth.ts` — `assinarState(clienteId, origem, agora)` e `verificarState` agora
+  carregam `origem: 'admin' | 'portal'` no `state` assinado (HMAC cobre a origem). O ML só
+  aceita 1 `redirect_uri` por app, então os dois pontos de partida dividem o mesmo callback e é
+  o `state` que diz pra onde voltar. Formato do state mudou de 3 pra 4 partes — state antigo em
+  voo vira inválido (janela de 10 min, usuário só clica de novo).
+- `src/app/api/portal/ml/conectar/route.ts` (novo) — lê o `cliente_id` da **sessão Supabase**
+  (query RLS-scoped, sem `?cliente_id=` na query como a rota admin), assina com `origem:'portal'`.
+- `src/app/api/oauth/ml/callback/route.ts` — redireciona pra `/portal/painel` ou `/clientes`
+  conforme `origem`. `paginaClientes` → `paginaRetorno(req, origem, aviso)`.
+- `src/lib/portal/avisosOauth.ts` (novo) — mapa de `?aviso=` extraído de `/clientes`, agora
+  compartilhado com `/portal/painel`.
+- `src/app/portal/painel/page.tsx` — botão "Conectar conta do Mercado Livre" + leitura do
+  `?aviso=`.
+
+**Gate completo (AGENTS.md)**: `npm run build` / `lint` / `verificar` / `test` — verdes,
+**64/64** testes (58 na `main` + 6 novos: `verificarState` com `origem`, e o callback
+redirecionando por `origem` nos 4 ramos). `tests/oauth-state.test.ts` atualizado pro novo
+contrato de `verificarState` (retorna `{ clienteId, origem }`).
+
+**Não testado unitariamente** (dependem de `next/headers`/`NextRequest`, que o repo não mocka —
+mesma limitação dos testes de `/portal/*` do plano 023): `/api/portal/ml/conectar` e o gate do
+`middleware.ts`. Ficam pro teste manual no browser, junto com o resto do fluxo do portal que o
+plano 023 também deixou pendente.
+
+**Desvio do plano**: branch `feat/fase3-conectar-conta` a partir da `main` (já com o PR #1
+mergeado) + commit + push + PR.
+
+## Status do 028 (2026-09-03, DONE — §1, não mergear sem revisão)
+
+O Livio delegou as 5 decisões de produto do roteiro ("escolha as melhores práticas"). As
+tomadas e usadas neste plano: **#4** — cliente opera só nas contas ML que ele conectou
+(`contas_ml_clientes` com o `cliente_id` dele); **#5** — no portal, título/descrição continuam
+"só geração", gravação revisada um a um (igual plano 025). As outras (#1 convite-only, #2
+cobrança depois, #3 branding sem subdomínio) viram f3c4/f3c5/f3c6 — registradas no `plans/027`.
+
+**Um pipeline de token só.** `src/lib/ml/client.ts` agora serve os dois universos: o `escopo`
+(`AsyncLocalStorage`) carrega `universo: 'robos' | 'cliente'`. `comConta` = robôs (`contas`);
+`comContaCliente(clienteId, sellerId, fn)` = portal (`contas_ml_clientes`). `getAccount` e
+`refrescarUmaVez` ramificam; `mlFetch`/`validToken` intocados. Motivo de não duplicar num
+`mlFetchCliente`: o motor (§11) chama `mlFetch` daqui e precisa funcionar pros dois sem
+refatoração; dois refresh divergentes reintroduziriam a corrida do §1.
+
+**Arquivos**: `src/lib/ml/oauth.ts` (+ `refreshAccessTokenPortal` — cópia do refresh dos robôs
+com credenciais do app do portal), `src/lib/ml/client.ts` (`comContaCliente`, `contaDoCliente`,
+`saveTokensCliente`, ramos de `universo` em `getAccount`/`refrescarUmaVez`, dedup chaveado por
+`${universo}:${sellerId}`), `AGENTS.md §1`, `plans/README.md`. `tests/token-cliente.test.ts`
+(novo, 5 testes — espelho do `token-flow.test.ts`: token válido; renova com credenciais do
+PORTAL e grava na linha de `contas_ml_clientes`; 401 → 1 retry; refresh concorrente = 1
+renovação + 1 gravação; sem escopo de cliente `getAccount` continua nos robôs).
+
+**Gate completo (AGENTS.md)**: `build` / `lint` / `verificar` / `test` — verdes, **69/69**
+(64 + 5 novos). `tests/token-flow.test.ts` (caminho dos robôs) roda junto e **continua 100%
+verde, sem alteração** — era a STOP condition principal.
+
+**Nada de schema neste card.** `lotes.cliente_id` + policies de RLS de `lotes`/`lote_itens` +
+as rotas/telas `/portal/lote*` são o f3c3, que depende desta revisão.
+
+**Não testado**: chamar o ML de verdade com um token de cliente real — sem `ML_CLIENT_ID_PORTAL`
+nem conexão de cliente neste ambiente (mesma natureza do teste manual pendente dos planos
+022/023/027).
+
+**Desvio do plano**: branch `feat/f3c2-token-cliente` empilhado sobre `feat/fase3-conectar-conta`
++ commit + push + PR. **Não mergear sem revisão humana — é o §1.**
+
+## Status do 034 (2026-09-03, DONE — branch `feat/034-portal-anuncios`)
+
+O fluxo de criação de anúncio (catálogo + fora do catálogo + IA + ficha por GTIN/foto/web,
+planos 019/029–033) agora roda dentro de `/portal/*` pro cliente logado, operando na conexão ML
+que **ele** conectou (`contas_ml_clientes`, via `comContaCliente`). Zero mudança no fluxo admin.
+
+**Pré-requisitos (feitos nesta passada)**: `feat/fase3-conectar-conta` (027) e
+`feat/f3c2-token-cliente` (028) rebasados na `main` atual (`1c6f06f`, já com os PRs #7/#8). O
+rebase só teve conflito de documentação (`plans/README.md`), resolvido preservando as duas
+árvores. **028 é §1 — continua exigindo revisão humana antes de mergear**; `feat/034-portal-anuncios`
+está empilhado sobre ele. Os merges na `main` não foram feitos aqui (convenção de PR do repo +
+`origin/main` em movimento por outra sessão).
+
+**Adapter novo** — `src/lib/portal/contaAtiva.ts`: resolve a conexão ativa do cliente logado
+(sessão Supabase → `clientes.id` → `contas_ml_clientes`), **sempre** validando o `seller_id`
+pedido contra as conexões do próprio cliente (`seller_alheio` → 409; `sem_sessao` → 401;
+`sem_conexao` → 409). `resolverContaDoClienteLogado` devolve um executor que embrulha a chamada
+ao ML em `comContaCliente` — nunca `comConta`. Seam de teste `injetarResolvedorDeSessao`.
+
+**Refactor** — o corpo dos handlers admin de `/api/anuncios{,/avulso,/categoria,/ficha-por-gtin,
+/rascunho,/ia,/ficha-web}` e `/api/catalogo/buscar` saiu pra funções puras em
+`src/lib/anuncios/{avulso,catalogo,consultas,assistente}.ts`. A única variação entre admin e
+portal é "abrir escopo" (`comConta` × `comContaCliente`); payload, invariante de nascer `paused`
++ PUT de pausa e o log em `anuncio_criacoes` são um só. `tests/anuncios*.test.ts` (admin)
+**100% verdes, sem alteração** — era a STOP condition.
+
+**Rotas novas** — `src/app/api/portal/anuncios/**` (8): `route.ts` (catálogo), `avulso`,
+`categoria`, `ficha-por-gtin`, `catalogo/buscar`, `rascunho` (ML via `comContaCliente`); `ia`,
+`ficha-web` (não batem no ML — só gate de sessão). `seller_id` do corpo/query nunca é a
+identidade — só escolhe entre as conexões do cliente, e é validado.
+
+**Componentes** — `CriarModos`/`CriarAnuncio`/`CriarAvulso` ganharam `base` (default
+`/api/anuncios`) e `baseCatalogo` (default `/api/catalogo`); o portal passa
+`/api/portal/anuncios` e `/api/portal/anuncios/catalogo`. `ferramentasInternas={false}` no
+portal esconde o link "Padronizar as fotos" (tela `/itens/*`, só admin).
+
+**Página** — `src/app/portal/criar/page.tsx` (0 conexões → "Conecte uma conta do ML primeiro"
+com link pra `/api/portal/ml/conectar`; ≥1 → `CriarModos`). `/portal/painel` ganhou o botão
+"Criar anúncio".
+
+**Migração** (aditiva, nullable — entregar ao Livio pro SQL Editor; MCP de migração bloqueado):
+
+```sql
+alter table public.anuncio_criacoes add column if not exists cliente_id bigint references public.clientes(id);
+alter table public.ficha_edits add column if not exists cliente_id bigint references public.clientes(id);
+```
+
+`registrarCriacaoAnuncio`/`registrarEscrita` ganharam `clienteId?` opcional → `cliente_id` no
+insert (admin passa `undefined` → null). RLS dessas tabelas segue service_role-only, como no
+admin (fora de escopo: RLS por cliente — só quando houver tela de histórico do cliente).
+
+**Gate completo (AGENTS.md)**, rodado no worktree com `node_modules` do repo:
+`npm run build` / `lint` / `typecheck` / `verificar` / `test` — verdes, **120/120**
+(8 novos em `tests/portal-anuncios.test.ts`: `contaAtiva` isolado nos 3 erros; rota avulso do
+portal — 401 sem sessão sem tocar o ML, caminho feliz com token do CLIENTE + `cliente_id` no
+log + `seller_id` do corpo ignorado, 409 pra seller de outro cliente; gate de sessão de
+categoria/ia). `tests/anuncios*.test.ts` e `tests/token-*.test.ts` intocados.
+
+**Não testado** (mesma natureza dos planos 022–033): fluxo de navegador de verdade — depende de
+`ML_CLIENT_ID_PORTAL` + um cliente de teste com conexão em `contas_ml_clientes` no ambiente.
+
+**Fora de escopo** (do plano): lote no portal (f3c3), RLS por cliente de
+`anuncio_criacoes`/`ficha_edits`, branding do portal (f3c5), escrita de título/descrição em
+lote (segue a decisão do 025).
+
+**Desvio do plano**: os merges de 027/028 na `main` não foram feitos (ver acima); ficam pro
+Livio via PR, com 028 revisado à mão por ser §1.

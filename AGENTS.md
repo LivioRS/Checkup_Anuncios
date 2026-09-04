@@ -22,6 +22,15 @@ Este arquivo documenta as regras que **qualquer agente** (ou desenvolvedor) deve
 - O app do Mercado Livre do portal (`ML_CLIENT_ID_PORTAL`/`ML_CLIENT_SECRET_PORTAL`) é
   **separado** do app dos robôs (`ML_CLIENT_ID`/`ML_CLIENT_SECRET`) — cada app do ML só aceita 1
   `redirect_uri` cadastrado, e o portal precisa do próprio. Ver `.env.example`.
+- **Desde o plano 028 (f3c2), `src/lib/ml/client.ts` serve os DOIS universos com um pipeline
+  só.** O `AsyncLocalStorage` (`escopo`) carrega `universo: 'robos' | 'cliente'`; `comConta`
+  entra no universo dos robôs (`contas`), `comContaCliente(clienteId, sellerId, fn)` no do
+  portal (`contas_ml_clientes`). `refrescarUmaVez` ramifica por `universo`: robôs →
+  `refreshAccessToken` + `saveTokens`; cliente → `refreshAccessTokenPortal` + `saveTokensCliente`
+  (credenciais do app do portal, grava na linha de `contas_ml_clientes`). O dedup `refreshEmVoo`
+  é chaveado por `${universo}:${sellerId}` — nunca cruza os dois. **Não** crie um `mlFetch`
+  paralelo pro cliente: o motor (§11) reusa este mesmo. Um segundo pipeline de refresh divergente
+  reintroduz exatamente a corrida que o §1 existe pra impedir.
 
 ---
 

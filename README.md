@@ -162,7 +162,13 @@ não mais "só service_role acessa"), e existe login/cadastro de cliente real em
 (Supabase Auth, `src/lib/supabase/browser.ts`/`server.ts`, adapter `src/lib/portal/cadastro.ts`)
 — namespace separado de `/clientes`, sem relação com `PANEL_PASSWORD`. `/portal/painel` é
 deliberadamente mínimo (prova que a RLS isola por cliente); a experiência completa do portal
-público é Fase 3 do kanban.
+público é Fase 3 do kanban — `plans/027-fase-3-roteiro.md` quebra ela em cards.
+
+Desde o plano 027 (f3c1) o cliente logado conecta a própria conta do ML pelo `/portal/painel`
+(`/api/portal/ml/conectar` — `cliente_id` sai da sessão, não da query). O `state` do OAuth
+carrega `origem: 'admin' | 'portal'` pra o callback único voltar pra `/clientes` ou
+`/portal/painel`. O plano 027 também corrigiu o middleware, que mandava `/api/portal/*` pro gate
+do `PANEL_PASSWORD` em vez do gate de sessão do portal (f3c0).
 
 **Fila de lote (plano 024, card f2c1; plano 025, card f2c2).** `lotes`/`lote_itens` guardam
 operações em massa. `POST /api/lote` cria o lote; `POST /api/lote/[id]/processar` é o worker —

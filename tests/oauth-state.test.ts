@@ -23,35 +23,47 @@ afterEach(() => {
 });
 
 describe('state assinado do OAuth do portal', () => {
-  it('roundtrip: assina e verifica, cliente_id bate', async () => {
+  it('roundtrip: assina e verifica, cliente_id bate; origem default é admin', async () => {
     const state = await assinarState(42);
-    expect(await verificarState(state)).toBe(42);
+    expect(await verificarState(state)).toEqual({ clienteId: 42, origem: 'admin' });
+  });
+
+  it('carrega a origem "portal" no roundtrip (plano 027, f3c1)', async () => {
+    const state = await assinarState(7, 'portal');
+    expect(await verificarState(state)).toEqual({ clienteId: 7, origem: 'portal' });
   });
 
   it('rejeita state adulterado (assinatura trocada)', async () => {
-    const state = await assinarState(42);
-    const [clienteId, exp] = state.split('.');
-    const adulterado = `${clienteId}.${exp}.${'0'.repeat(64)}`;
+    const state = await assinarState(42, 'portal');
+    const [clienteId, origem, exp] = state.split('.');
+    const adulterado = `${clienteId}.${origem}.${exp}.${'0'.repeat(64)}`;
     expect(await verificarState(adulterado)).toBeNull();
+  });
+
+  it('rejeita se a origem for trocada depois de assinada (a HMAC cobre a origem)', async () => {
+    const state = await assinarState(42, 'admin');
+    const [clienteId, , exp, sig] = state.split('.');
+    expect(await verificarState(`${clienteId}.portal.${exp}.${sig}`)).toBeNull();
   });
 
   it('rejeita state expirado', async () => {
     const agora = Date.now();
-    const state = await assinarState(42, agora - 60 * 60 * 1000); // assinado 1h atrás
+    const state = await assinarState(42, 'admin', agora - 60 * 60 * 1000); // assinado 1h atrás
     expect(await verificarState(state, agora)).toBeNull();
   });
 
-  it('rejeita state malformado', async () => {
+  it('rejeita state malformado (inclusive o formato antigo de 3 partes)', async () => {
     expect(await verificarState('')).toBeNull();
     expect(await verificarState('sem-pontos')).toBeNull();
     expect(await verificarState('a.b')).toBeNull();
+    expect(await verificarState('42.9999999999999.deadbeef')).toBeNull();
   });
 
   it('dois cliente_id diferentes geram states diferentes e não se cruzam', async () => {
-    const a = await assinarState(1);
-    const b = await assinarState(2);
-    expect(await verificarState(a)).toBe(1);
-    expect(await verificarState(b)).toBe(2);
+    const a = await assinarState(1, 'portal');
+    const b = await assinarState(2, 'admin');
+    expect(await verificarState(a)).toEqual({ clienteId: 1, origem: 'portal' });
+    expect(await verificarState(b)).toEqual({ clienteId: 2, origem: 'admin' });
   });
 });
 
