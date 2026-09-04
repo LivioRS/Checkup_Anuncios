@@ -12,3 +12,6 @@ next-env.d.ts
 
 # cópias soltas de plano geradas por referência @arquivo
 0*enriquecer*.md
+
+PRbody.md
+PR-body.md

@@ -41,6 +41,8 @@ export type Lote = {
   total_itens: number;
   status: 'em_andamento' | 'concluido';
   tipo: TipoLote;
+  /** Cliente do portal dono do lote (plano 035, f3c3). `null` = lote do admin (robôs). */
+  cliente_id: number | null;
 };
 
 export type LoteComContagens = Lote & {
@@ -51,6 +53,8 @@ export async function criarLote(input: {
   sellerId: string;
   itemIds: string[];
   tipo?: TipoLote;
+  /** Cliente do portal dono do lote (plano 035). Admin não passa → `cliente_id` null. */
+  clienteId?: number;
 }): Promise<{ loteId: string }> {
   if (input.itemIds.length === 0) throw new Error('Lote precisa de pelo menos um item.');
 
@@ -67,6 +71,7 @@ export async function criarLote(input: {
       seller_id: input.sellerId,
       total_itens: input.itemIds.length,
       tipo: input.tipo ?? 'diagnostico',
+      cliente_id: input.clienteId ?? null,
     });
   if (erroLote) throw new Error(`Falha ao criar lote: ${erroLote.message}`);
 
@@ -82,14 +87,18 @@ export async function buscarLote(loteId: string): Promise<LoteComContagens | nul
   const cliente = db();
   const { data: loteRows, error: erroLote } = await cliente
     .from('lotes')
-    .select('id, seller_id, total_itens, status, tipo')
+    .select('id, seller_id, total_itens, status, tipo, cliente_id')
     .eq('id', loteId)
     .limit(1);
   if (erroLote) throw new Error(`Falha ao buscar lote: ${erroLote.message}`);
   const bruto = loteRows?.[0] as (Omit<Lote, 'tipo'> & { tipo?: unknown }) | undefined;
   if (!bruto) return null;
-  // Lote antigo (pré-025) pode não ter `tipo`; o default do banco é 'diagnostico'.
-  const lote: Lote = { ...bruto, tipo: ehTipoLote(bruto.tipo) ? bruto.tipo : 'diagnostico' };
+  // Lote antigo (pré-025/035) pode não ter `tipo`/`cliente_id`; defaults: 'diagnostico' / null.
+  const lote: Lote = {
+    ...bruto,
+    tipo: ehTipoLote(bruto.tipo) ? bruto.tipo : 'diagnostico',
+    cliente_id: bruto.cliente_id ?? null,
+  };
 
   const { data: itens, error: erroItens } = await cliente
     .from('lote_itens')
@@ -181,4 +190,48 @@ export async function fecharSeCompleto(loteId: string): Promise<void> {
     .update({ status: 'concluido' })
     .eq('id', loteId);
   if (erroUpdate) throw new Error(`Falha ao fechar lote: ${erroUpdate.message}`);
+}
+
+/** Todos os itens do lote, com `resultado`/`erro` — pra tela de progresso (plano 026). */
+export async function listarItensDoLote(loteId: string): Promise<LoteItem[]> {
+  const { data, error } = await db()
+    .from('lote_itens')
+    .select('id, lote_id, item_id, status, tentativas, resultado, erro')
+    .eq('lote_id', loteId);
+  if (error) throw new Error(`Falha ao listar itens do lote: ${error.message}`);
+  return (data ?? []) as LoteItem[];
+}
+
+/**
+ * Devolve os itens `erro` do lote pra fila (`pendente`, `tentativas` zerado, `erro` limpo) e
+ * reabre o lote se algum voltou. Loop por `id` (mesmo padrão de `proximosPendentes`) em vez de
+ * `update` multi-linha — é o que o cliente Supabase deste repo e o fake de teste suportam.
+ */
+export async function reenfileirarErros(loteId: string): Promise<{ reenfileirados: number }> {
+  const cliente = db();
+  const { data, error } = await cliente
+    .from('lote_itens')
+    .select('id, lote_id, item_id, status, tentativas, resultado, erro')
+    .eq('lote_id', loteId)
+    .eq('status', 'erro');
+  if (error) throw new Error(`Falha ao buscar itens com erro: ${error.message}`);
+
+  const itens = (data ?? []) as LoteItem[];
+  for (const item of itens) {
+    const { error: erroUpdate } = await cliente
+      .from('lote_itens')
+      .update({ status: 'pendente', tentativas: 0, erro: null })
+      .eq('id', item.id);
+    if (erroUpdate) throw new Error(`Falha ao reenfileirar item: ${erroUpdate.message}`);
+  }
+
+  if (itens.length > 0) {
+    const { error: erroLote } = await cliente
+      .from('lotes')
+      .update({ status: 'em_andamento' })
+      .eq('id', loteId);
+    if (erroLote) throw new Error(`Falha ao reabrir o lote: ${erroLote.message}`);
+  }
+
+  return { reenfileirados: itens.length };
 }

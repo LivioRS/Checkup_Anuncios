@@ -64,9 +64,12 @@ export default async function PortalPainelPage({
           ) : null}
 
           {conexoes.length > 0 ? (
-            <p style={{ marginBottom: 16 }}>
+            <p style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <a className="btn primary" href="/portal/criar">
                 Criar anúncio
+              </a>
+              <a className="btn" href="/portal/lote">
+                Operação em lote
               </a>
             </p>
           ) : null}
