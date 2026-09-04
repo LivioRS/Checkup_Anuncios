@@ -15,8 +15,8 @@ export default function PendentesPage() {
   const [contas, setContas] = useState<ContaComPendentes[] | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erroGeral, setErroGeral] = useState<string | null>(null);
-  const [ativando, setAtivando] = useState<string | null>(null);
-  const [ativados, setAtivados] = useState<Record<string, string>>({});
+  const [emAcao, setEmAcao] = useState<{ id: string; tipo: 'ativar' | 'encerrar' } | null>(null);
+  const [statusLocal, setStatusLocal] = useState<Record<string, string>>({});
 
   async function carregar() {
     setCarregando(true);
@@ -42,7 +42,7 @@ export default function PendentesPage() {
 
   async function ativar(id: string) {
     if (!window.confirm(`Ativar o anúncio ${id}? Ele fica visível pra compra no Mercado Livre.`)) return;
-    setAtivando(id);
+    setEmAcao({ id, tipo: 'ativar' });
     try {
       const res = await fetch(`/api/anuncios/pendentes/${id}/ativar`, { method: 'POST' });
       const json = await res.json();
@@ -50,11 +50,36 @@ export default function PendentesPage() {
         window.alert(`Não consegui ativar: ${json?.erro ?? 'falha desconhecida'}`);
         return;
       }
-      setAtivados((prev) => ({ ...prev, [id]: json.status ?? 'active' }));
+      setStatusLocal((prev) => ({ ...prev, [id]: json.status ?? 'active' }));
     } catch (e) {
       window.alert(e instanceof Error ? e.message : String(e));
     } finally {
-      setAtivando(null);
+      setEmAcao(null);
+    }
+  }
+
+  async function encerrar(id: string) {
+    // O ML não tem "deletar" de verdade — closed é definitivo, não reabre pelo fluxo normal.
+    if (
+      !window.confirm(
+        `Encerrar o anúncio ${id}? Isso é DEFINITIVO — o Mercado Livre não deixa reabrir pelo fluxo normal. Use pra anúncio de teste/errado.`,
+      )
+    ) {
+      return;
+    }
+    setEmAcao({ id, tipo: 'encerrar' });
+    try {
+      const res = await fetch(`/api/anuncios/pendentes/${id}/encerrar`, { method: 'POST' });
+      const json = await res.json();
+      if (!res.ok || !json?.ok) {
+        window.alert(`Não consegui encerrar: ${json?.erro ?? 'falha desconhecida'}`);
+        return;
+      }
+      setStatusLocal((prev) => ({ ...prev, [id]: json.status ?? 'closed' }));
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEmAcao(null);
     }
   }
 
@@ -72,7 +97,8 @@ export default function PendentesPage() {
       <small>
         Todos os anúncios <strong>pausados</strong> das contas cadastradas — criados aqui ou
         pausados por qualquer outro motivo. Ative só depois de conferir; o app nunca ativa
-        sozinho.
+        sozinho. <strong>Encerrar</strong> é o mais perto de "deletar" que o Mercado Livre
+        permite — definitivo, não reabre pelo fluxo normal; use pra anúncio de teste/errado.
       </small>
 
       {erroGeral ? (
@@ -109,7 +135,10 @@ export default function PendentesPage() {
             <table className="tabela" style={{ marginTop: 8 }}>
               <tbody>
                 {c.itens.map((it) => {
-                  const statusAtual = ativados[it.id] ?? it.status;
+                  const statusAtual = statusLocal[it.id] ?? it.status;
+                  const travado = statusAtual === 'active' || statusAtual === 'closed';
+                  const nivel =
+                    statusAtual === 'active' ? 'bom' : statusAtual === 'closed' ? 'critico' : 'atencao';
                   return (
                     <tr key={it.id}>
                       <td>
@@ -118,7 +147,7 @@ export default function PendentesPage() {
                         <small>{it.id}</small>
                       </td>
                       <td>
-                        <Selo nivel={statusAtual === 'active' ? 'bom' : 'atencao'} semIcone>
+                        <Selo nivel={nivel} semIcone>
                           {statusAtual ?? '—'}
                         </Selo>
                       </td>
@@ -129,14 +158,31 @@ export default function PendentesPage() {
                           </a>
                         ) : null}
                       </td>
-                      <td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
                         <button
                           type="button"
                           className="btn primary pequeno"
                           onClick={() => ativar(it.id)}
-                          disabled={ativando === it.id || statusAtual === 'active'}
+                          disabled={emAcao?.id === it.id || travado}
+                          style={{ marginRight: 6 }}
                         >
-                          {ativando === it.id ? 'Ativando…' : statusAtual === 'active' ? 'ativo' : 'Ativar'}
+                          {emAcao?.id === it.id && emAcao.tipo === 'ativar'
+                            ? 'Ativando…'
+                            : statusAtual === 'active'
+                              ? 'ativo'
+                              : 'Ativar'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn pequeno"
+                          onClick={() => encerrar(it.id)}
+                          disabled={emAcao?.id === it.id || travado}
+                        >
+                          {emAcao?.id === it.id && emAcao.tipo === 'encerrar'
+                            ? 'Encerrando…'
+                            : statusAtual === 'closed'
+                              ? 'encerrado'
+                              : 'Encerrar'}
                         </button>
                       </td>
                     </tr>

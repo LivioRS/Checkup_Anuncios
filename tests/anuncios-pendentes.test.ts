@@ -3,6 +3,7 @@ import { makeFakeSupabase } from './helpers/supabase-fake';
 import { injetarCliente } from '../src/lib/supabase';
 import { GET as listarPendentes } from '../src/app/api/anuncios/pendentes/route';
 import { POST as ativar } from '../src/app/api/anuncios/pendentes/[id]/ativar/route';
+import { POST as encerrar } from '../src/app/api/anuncios/pendentes/[id]/encerrar/route';
 
 /** Tela "Pendentes" — lista anúncios pausados de todas as contas; ativar é sempre clique do usuário. */
 
@@ -160,5 +161,77 @@ describe('POST /api/anuncios/pendentes/[id]/ativar', () => {
       params: Promise.resolve({ id: 'MLB9' }),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+describe('POST /api/anuncios/pendentes/[id]/encerrar', () => {
+  it('encerra (PUT status=closed) e registra a escrita — não é DELETE', async () => {
+    const { client, writes } = makeFakeSupabase({ contas: [conta()] });
+    injetarCliente(() => client as never);
+    let putBody: unknown = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith('/items/MLB5') && (!init || init.method === undefined)) {
+          return responseBody({ id: 'MLB5', seller_id: 2490900, status: 'paused' });
+        }
+        if (u.endsWith('/items/MLB5') && init?.method === 'PUT') {
+          putBody = JSON.parse(String(init.body));
+          return responseBody({ id: 'MLB5', status: 'closed' });
+        }
+        throw new Error(`inesperado: ${u} ${init?.method}`);
+      }),
+    );
+
+    const res = await encerrar(new Request('http://local', { method: 'POST' }), {
+      params: Promise.resolve({ id: 'MLB5' }),
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json).toEqual({ ok: true, status: 'closed' });
+    expect(putBody).toEqual({ status: 'closed' });
+
+    const log = writes.find((w) => w.table === 'ficha_edits' && w.kind === 'insert');
+    expect(log).toBeTruthy();
+    expect((log!.payload as Record<string, unknown>).payload).toEqual({ status: 'closed' });
+  });
+
+  it('anúncio de conta não cadastrada: 403, não encerra', async () => {
+    injetarCliente(() => makeFakeSupabase({ contas: [conta()] }).client as never);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => responseBody({ id: 'MLB6', seller_id: 999999, status: 'paused' })),
+    );
+
+    const res = await encerrar(new Request('http://local', { method: 'POST' }), {
+      params: Promise.resolve({ id: 'MLB6' }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it('propaga a recusa do ML com o corpo cru', async () => {
+    injetarCliente(() => makeFakeSupabase({ contas: [conta()] }).client as never);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const u = String(url);
+        if (u.endsWith('/items/MLB7') && (!init || init.method === undefined)) {
+          return responseBody({ id: 'MLB7', seller_id: 2490900, status: 'paused' });
+        }
+        if (u.endsWith('/items/MLB7') && init?.method === 'PUT') {
+          return new Response(JSON.stringify({ message: 'has active questions' }), { status: 400 });
+        }
+        throw new Error('inesperado');
+      }),
+    );
+
+    const res = await encerrar(new Request('http://local', { method: 'POST' }), {
+      params: Promise.resolve({ id: 'MLB7' }),
+    });
+    const json = await res.json();
+    expect(res.status).toBe(400);
+    expect(json.body.message).toBe('has active questions');
   });
 });
