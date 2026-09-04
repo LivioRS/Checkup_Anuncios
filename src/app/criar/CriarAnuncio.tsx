@@ -29,9 +29,15 @@ function descreverErro(json: unknown): string {
 export default function CriarAnuncio({
   contas,
   prefill,
+  base = '/api/anuncios',
+  baseCatalogo = '/api/catalogo',
 }: {
   contas: Conta[];
   prefill?: { sellerId?: string; marca?: string; modelo?: string; codigo?: string };
+  /** Prefixo das rotas de criação. Admin: `/api/anuncios` (padrão). Portal: `/api/portal/anuncios`. */
+  base?: string;
+  /** Prefixo da busca de catálogo. Admin: `/api/catalogo` (padrão). Portal: `/api/portal/anuncios/catalogo`. */
+  baseCatalogo?: string;
 }) {
   const [sellerId, setSellerId] = useState(prefill?.sellerId || contas[0]?.seller_id || '');
   const [marca, setMarca] = useState(prefill?.marca ?? '');
@@ -61,7 +67,7 @@ export default function CriarAnuncio({
     try {
       const p = new URLSearchParams({ seller_id: sellerId, marca, modelo });
       if (codigo.trim()) p.set('codigo', codigo.trim());
-      const res = await fetch(`/api/catalogo/buscar?${p.toString()}`);
+      const res = await fetch(`${baseCatalogo}/buscar?${p.toString()}`);
       const json = await res.json();
       if (!res.ok) {
         setErroBusca(descreverErro(json));
@@ -80,7 +86,7 @@ export default function CriarAnuncio({
     setCriando(true);
     setResultado(null);
     try {
-      const res = await fetch('/api/anuncios', {
+      const res = await fetch(base, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({

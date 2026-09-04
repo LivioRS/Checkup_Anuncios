@@ -14,7 +14,20 @@ type Prefill = { sellerId?: string; marca?: string; modelo?: string; codigo?: st
  * Plano 033: o "Fora do catálogo" pode empurrar o Livio pro "Do catálogo" quando o GTIN mostra
  * que o produto já tem página no ML — levando marca/modelo/código junto.
  */
-export default function CriarModos({ contas }: { contas: Conta[] }) {
+export default function CriarModos({
+  contas,
+  base = '/api/anuncios',
+  baseCatalogo = '/api/catalogo',
+  ferramentasInternas = true,
+}: {
+  contas: Conta[];
+  /** Prefixo das rotas de criação. Admin: `/api/anuncios` (padrão). Portal: `/api/portal/anuncios`. */
+  base?: string;
+  /** Prefixo da busca de catálogo. Admin: `/api/catalogo` (padrão). Portal: `/api/portal/anuncios/catalogo`. */
+  baseCatalogo?: string;
+  /** Liga links de telas só-admin (`/itens/*`). O portal passa `false`. */
+  ferramentasInternas?: boolean;
+}) {
   const [modo, setModo] = useState<Modo>('catalogo');
   const [prefill, setPrefill] = useState<Prefill | null>(null);
 
@@ -59,9 +72,16 @@ export default function CriarModos({ contas }: { contas: Conta[] }) {
           key={prefill ? `${prefill.marca}|${prefill.modelo}|${prefill.codigo}` : 'vazio'}
           contas={contas}
           prefill={prefill ?? undefined}
+          base={base}
+          baseCatalogo={baseCatalogo}
         />
       ) : (
-        <CriarAvulso contas={contas} onTrocarParaCatalogo={trocarParaCatalogo} />
+        <CriarAvulso
+          contas={contas}
+          onTrocarParaCatalogo={trocarParaCatalogo}
+          base={base}
+          ferramentasInternas={ferramentasInternas}
+        />
       )}
     </>
   );

@@ -23,9 +23,15 @@ const campo = { marginTop: 12 } as const;
 export default function CriarAvulso({
   contas,
   onTrocarParaCatalogo,
+  base = '/api/anuncios',
+  ferramentasInternas = true,
 }: {
   contas: Conta[];
   onTrocarParaCatalogo?: (dados: { sellerId?: string; marca?: string; modelo?: string; codigo?: string }) => void;
+  /** Prefixo das rotas de criação. Admin: `/api/anuncios` (padrão). Portal: `/api/portal/anuncios`. */
+  base?: string;
+  /** Liga o link "Padronizar as fotos" (tela `/itens/*`, só admin). O portal passa `false`. */
+  ferramentasInternas?: boolean;
 }) {
   const [sellerId, setSellerId] = useState(contas[0]?.seller_id ?? '');
   const [titulo, setTitulo] = useState('');
@@ -100,7 +106,7 @@ export default function CriarAvulso({
     setPreenchendoIa(true);
     setIaErro(null);
     try {
-      const res = await fetch('/api/anuncios/rascunho', {
+      const res = await fetch(`${base}/rascunho`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -137,7 +143,7 @@ export default function CriarAvulso({
     setFichaWeb(null);
     setFichaWebFontes([]);
     try {
-      const res = await fetch('/api/anuncios/ficha-web', {
+      const res = await fetch(`${base}/ficha-web`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ titulo: titulo.trim(), marca: marca.trim(), modelo: modelo.trim() }),
@@ -170,7 +176,7 @@ export default function CriarAvulso({
     setEscolhaIa(null);
     try {
       const p = new URLSearchParams({ q, seller_id: sellerId });
-      const res = await fetch(`/api/anuncios/categoria?${p}`);
+      const res = await fetch(`${base}/categoria?${p}`);
       const json = await res.json();
       if (!res.ok) {
         setSugestoes([]);
@@ -197,7 +203,7 @@ export default function CriarAvulso({
     setIaCarregando(acao);
     setIaErro(null);
     try {
-      const res = await fetch('/api/anuncios/ia', {
+      const res = await fetch(`${base}/ia`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -239,7 +245,7 @@ export default function CriarAvulso({
     setFichaGtinProdutoId(null);
     try {
       const p = new URLSearchParams({ gtin: cod, seller_id: sellerId });
-      const res = await fetch(`/api/anuncios/ficha-por-gtin?${p}`);
+      const res = await fetch(`${base}/ficha-por-gtin?${p}`);
       const json = await res.json();
       if (!res.ok) {
         setFichaGtinMsg(json?.erro ?? 'Falha ao buscar a ficha.');
@@ -277,7 +283,7 @@ export default function CriarAvulso({
     setCriando(true);
     setResultado(null);
     try {
-      const res = await fetch('/api/anuncios/avulso', {
+      const res = await fetch(`${base}/avulso`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -783,7 +789,7 @@ export default function CriarAvulso({
                 )}{' '}
                 — confira e ative manualmente no Mercado Livre.
               </p>
-              {resultado.id ? (
+              {resultado.id && ferramentasInternas ? (
                 <p style={{ margin: '8px 0 0' }}>
                   <a className="btn pequeno" href={`/itens/${resultado.id}/fotos`}>
                     Padronizar as fotos (quadrado / fundo branco)
