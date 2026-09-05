@@ -1,13 +1,27 @@
 import { NextResponse } from 'next/server';
 import { criarLote, ehTipoLote, TIPOS_LOTE } from '@/lib/lotes/fila';
-import { resolverContaDoClienteLogado, respostaErroConta } from '@/lib/portal/contaAtiva';
+import { resolverContaDoClienteLogado, respostaErroConta, clienteLogadoInfo } from '@/lib/portal/contaAtiva';
+import { clienteLiberado } from '@/lib/portal/assinatura';
 
 /**
  * Espelho de `POST /api/lote` pro CLIENTE do portal (plano 035, f3c3). `seller_id` é resolvido
  * pela sessão (`resolverContaDoClienteLogado`) — nunca vem do corpo. O lote nasce com
  * `cliente_id` do cliente logado.
+ *
+ * Plano 036 (f3c6): fora do trial de 7 dias, exige assinatura `authorized` — 402 antes de criar.
  */
 export async function POST(req: Request) {
+  const info = await clienteLogadoInfo();
+  if (!info) {
+    return NextResponse.json({ erro: 'Faça login no portal para continuar.' }, { status: 401 });
+  }
+  if (!(await clienteLiberado(info.id, info.criadoEm))) {
+    return NextResponse.json(
+      { erro: 'Seu período de teste acabou. Assine no seu painel para continuar rodando lotes.' },
+      { status: 402 },
+    );
+  }
+
   const body = await req.json().catch(() => ({}));
   const itemIds = Array.isArray(body?.item_ids) ? body.item_ids.map(String) : [];
   const tipo = body?.tipo ?? 'diagnostico';
