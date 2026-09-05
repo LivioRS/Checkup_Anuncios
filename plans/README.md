@@ -19,6 +19,8 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 > **Pendências abertas do portal (Fase 3)** estão consolidadas em
 > [`PENDENCIAS-portal-fase3.md`](PENDENCIAS-portal-fase3.md) — credenciais que só o Livio pode
 > configurar, migrações a rodar, testes manuais nunca feitos e cards fora de escopo.
+> O passo a passo pra colocar no ar (merge → SQL no Supabase → apps ML/Mercado Pago → env →
+> deploy → teste) está em [`RUNBOOK-portal-go-live.md`](RUNBOOK-portal-go-live.md).
 
 ## Execution order & status
 

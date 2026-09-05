@@ -6,6 +6,10 @@
 >
 > Legenda de responsável: **[Livio]** só ele pode fazer · **[Dev]** trabalho de código ·
 > **[Decisão]** precisa de escolha de produto antes de virar tarefa.
+>
+> **Pra colocar no ar:** siga o passo a passo em
+> [`RUNBOOK-portal-go-live.md`](RUNBOOK-portal-go-live.md) — cobre as seções 0, 1, 2, 3 e 4
+> deste doc na ordem certa, com o SQL pronto pro Supabase e a sequência de teste ponta a ponta.
 
 ---
 
