@@ -36,6 +36,28 @@ export const env = {
   get redirectUriPortal() {
     return req('ML_REDIRECT_URI_PORTAL');
   },
+
+  /**
+   * Cobrança do portal via Mercado Pago — assinaturas (plano 036, f3c6). Token/segredo de uma
+   * aplicação própria do MP (não confundir com credenciais do app do ML). Sem essas duas, as
+   * rotas de assinatura devolvem 503 (mesmo padrão de `temIA()`/`temBuscaWeb()`).
+   */
+  get mercadoPagoAccessToken() {
+    return req('MERCADOPAGO_ACCESS_TOKEN');
+  },
+  get mercadoPagoWebhookSecret() {
+    return req('MERCADOPAGO_WEBHOOK_SECRET');
+  },
+  /**
+   * Preço do plano único, em centavos — constante fácil de trocar sem mexer em código
+   * (`MERCADOPAGO_PLANO_VALOR_CENTAVOS` no `.env`). Default 9700 = R$ 97,00, só um placeholder;
+   * o valor final é decisão do Livio.
+   */
+  get mercadoPagoPlanoValorCentavos(): number {
+    const bruto = process.env.MERCADOPAGO_PLANO_VALOR_CENTAVOS;
+    const n = bruto ? Number(bruto) : 9700;
+    return Number.isFinite(n) && n > 0 ? n : 9700;
+  },
 };
 
 /**

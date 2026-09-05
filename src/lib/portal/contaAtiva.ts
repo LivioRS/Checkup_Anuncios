@@ -48,14 +48,29 @@ async function authUserIdDaSessao(): Promise<string | null> {
   return user?.id ?? null;
 }
 
-async function clienteIdPorAuthUserId(authUserId: string): Promise<number | null> {
+type ClienteInfo = { id: number; criadoEm: string };
+
+/**
+ * `status !== 'ativo'` (plano 036, f3c4) devolve `null` aqui — mesmo efeito de "sem cadastro".
+ * Um cliente `suspenso`/`cancelado` some das rotas do portal por inteiro, não só das de
+ * criação: `clienteLogadoId`/`resolverContaDoClienteLogado`/`conexoesDoClienteLogado` chamam
+ * esta função por baixo, então o gate vale pra tudo sem precisar editar cada rota.
+ */
+async function clienteInfoPorAuthUserId(authUserId: string): Promise<ClienteInfo | null> {
   const { data, error } = await db()
     .from('clientes')
-    .select('id')
+    .select('id, criado_em, status')
     .eq('auth_user_id', authUserId)
     .limit(1);
   if (error) throw new Error(`Supabase: ${error.message}`);
-  return (data?.[0] as { id: number } | undefined)?.id ?? null;
+  const row = data?.[0] as { id: number; criado_em: string; status: string } | undefined;
+  if (!row || row.status !== 'ativo') return null;
+  return { id: row.id, criadoEm: row.criado_em };
+}
+
+async function clienteIdPorAuthUserId(authUserId: string): Promise<number | null> {
+  const info = await clienteInfoPorAuthUserId(authUserId);
+  return info?.id ?? null;
 }
 
 async function conexoesPorClienteId(clienteId: number): Promise<ContaAtivaCliente[]> {
@@ -77,6 +92,13 @@ export async function clienteLogadoId(): Promise<number | null> {
   const authUserId = await authUserIdDaSessao();
   if (!authUserId) return null;
   return clienteIdPorAuthUserId(authUserId);
+}
+
+/** `{id, criadoEm}` do cliente logado — `criadoEm` alimenta o cálculo de trial (plano 036). */
+export async function clienteLogadoInfo(): Promise<ClienteInfo | null> {
+  const authUserId = await authUserIdDaSessao();
+  if (!authUserId) return null;
+  return clienteInfoPorAuthUserId(authUserId);
 }
 
 /** Todas as conexões ML do cliente logado — pra dropdown quando ele tem mais de uma. */
