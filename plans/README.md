@@ -16,6 +16,10 @@ TypeScript, Supabase + API Mercado Livre + Anthropic + sharp).
 Execute na ordem abaixo, respeitando dependências. Leia o plano inteiro antes de começar,
 obedeça às STOP conditions e atualize a coluna Status quando terminar.
 
+> **Pendências abertas do portal (Fase 3)** estão consolidadas em
+> [`PENDENCIAS-portal-fase3.md`](PENDENCIAS-portal-fase3.md) — credenciais que só o Livio pode
+> configurar, migrações a rodar, testes manuais nunca feitos e cards fora de escopo.
+
 ## Execution order & status
 
 | Plan | Título | Prio | Esf. | Depende de | Status |
