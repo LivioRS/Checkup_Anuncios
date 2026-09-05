@@ -1,11 +1,24 @@
 import { redirect } from 'next/navigation';
 import { supabaseServidor } from '@/lib/supabase/server';
 import { textoAviso } from '@/lib/portal/avisosOauth';
+import { assinaturaDoCliente, emTrial, TRIAL_DIAS } from '@/lib/portal/assinatura';
+import { temCobranca } from '@/lib/mercadopago/client';
 import { Selo, Secao } from '@/components/ui';
+import AssinarBotao from './AssinarBotao';
+import CancelarAssinaturaBotao from './CancelarAssinaturaBotao';
+import PerfilForm from './PerfilForm';
 
 export const dynamic = 'force-dynamic';
 
-type ClienteRow = { id: number; nome: string; email: string; status: string };
+type ClienteRow = {
+  id: number;
+  nome: string;
+  email: string;
+  status: string;
+  criado_em: string;
+  nome_loja: string | null;
+  logo_url: string | null;
+};
 type ConexaoRow = { seller_id: string; apelido: string | null; conectado_em: string };
 
 /**
@@ -31,9 +44,15 @@ export default async function PortalPainelPage({
 
   const { data: clienteRows } = await supabase
     .from('clientes')
-    .select('id, nome, email, status')
+    .select('id, nome, email, status, criado_em, nome_loja, logo_url')
     .limit(1);
   const cliente = (clienteRows?.[0] as ClienteRow | undefined) ?? null;
+
+  const assinatura = cliente ? await assinaturaDoCliente(cliente.id) : null;
+  const trial = cliente ? emTrial(cliente.criado_em) : false;
+  const diasRestantes = cliente
+    ? Math.max(0, TRIAL_DIAS - Math.floor((Date.now() - new Date(cliente.criado_em).getTime()) / 86400000))
+    : 0;
 
   const conexoes = cliente
     ? ((
@@ -73,6 +92,49 @@ export default async function PortalPainelPage({
               </a>
             </p>
           ) : null}
+
+          <Secao titulo="Assinatura">
+            {assinatura?.status === 'authorized' ? (
+              <p style={{ margin: 0 }}>
+                <Selo nivel="bom">assinatura ativa</Selo> você pode criar anúncios e rodar lotes
+                sem limite.
+                {temCobranca() ? <CancelarAssinaturaBotao /> : null}
+              </p>
+            ) : assinatura?.status === 'paused' ? (
+              <p style={{ margin: 0 }}>
+                <Selo nivel="atencao">assinatura pausada</Selo> o Mercado Pago pausou a cobrança
+                (cartão recusado?). Regularize no app do Mercado Pago ou assine de novo.
+                {temCobranca() ? <CancelarAssinaturaBotao /> : null}
+              </p>
+            ) : trial ? (
+              <>
+                <p style={{ margin: 0 }}>
+                  <Selo nivel="atencao">período de teste</Selo> faltam {diasRestantes} dia
+                  {diasRestantes === 1 ? '' : 's'} — depois disso, criar anúncio e rodar lote
+                  exigem assinatura.
+                </p>
+                {temCobranca() ? <AssinarBotao /> : null}
+              </>
+            ) : (
+              <>
+                <p style={{ margin: 0 }}>
+                  <Selo nivel="critico">período de teste encerrado</Selo> assine para continuar
+                  criando anúncios e rodando lotes.
+                </p>
+                {temCobranca() ? (
+                  <AssinarBotao />
+                ) : (
+                  <p style={{ margin: '10px 0 0' }}>
+                    <small>Cobrança ainda não configurada — fale com o suporte.</small>
+                  </p>
+                )}
+              </>
+            )}
+          </Secao>
+
+          <Secao titulo="Nome e logo da loja">
+            <PerfilForm nomeLojaInicial={cliente.nome_loja} logoUrlInicial={cliente.logo_url} />
+          </Secao>
 
           <Secao
             titulo="Contas do Mercado Livre conectadas"

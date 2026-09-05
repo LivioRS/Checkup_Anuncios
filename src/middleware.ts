@@ -20,6 +20,10 @@ function ehRotaPublica(pathname: string): boolean {
   if (pathname === '/manifest.json') return true;
   if (pathname.startsWith('/icons/')) return true;
   if (pathname.startsWith('/.well-known/')) return true;
+  // O Mercado Pago chama isto direto (plano 036) — autenticado por `x-signature`, não por
+  // cookie. Não começa com `/portal`/`/api/portal`, então cairia no gate do PANEL_PASSWORD
+  // sem esta exceção (mesmo motivo do f3c0 pro `/api/portal/*`).
+  if (pathname === '/api/webhooks/mercadopago') return true;
   return false;
 }
 

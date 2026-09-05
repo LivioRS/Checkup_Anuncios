@@ -1,8 +1,10 @@
 import { redirect } from 'next/navigation';
 import { supabaseServidor } from '@/lib/supabase/server';
-import { conexoesDoClienteLogado } from '@/lib/portal/contaAtiva';
+import { conexoesDoClienteLogado, clienteLogadoInfo } from '@/lib/portal/contaAtiva';
+import { clienteLiberado } from '@/lib/portal/assinatura';
 import { Secao } from '@/components/ui';
 import CriarModos from '@/app/criar/CriarModos';
+import AssinaturaBloqueio from '@/app/portal/AssinaturaBloqueio';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +20,11 @@ export default async function PortalCriarPage() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect('/portal/login');
+
+  const info = await clienteLogadoInfo();
+  if (info && !(await clienteLiberado(info.id, info.criadoEm))) {
+    return <AssinaturaBloqueio titulo="Criar anúncio" />;
+  }
 
   const conexoes = await conexoesDoClienteLogado();
 

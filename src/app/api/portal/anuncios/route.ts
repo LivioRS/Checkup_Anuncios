@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { criarAnuncioCatalogo, type CriarCatalogoBody } from '@/lib/anuncios/catalogo';
-import { resolverContaDoClienteLogado, respostaErroConta } from '@/lib/portal/contaAtiva';
+import { resolverContaDoClienteLogado, respostaErroConta, clienteLogadoInfo } from '@/lib/portal/contaAtiva';
+import { clienteLiberado } from '@/lib/portal/assinatura';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -10,8 +11,22 @@ export const maxDuration = 60;
  * (plano 034). Mesmo núcleo (`criarAnuncioCatalogo`); o ML é chamado com o token da conexão
  * `contas_ml_clientes` do cliente logado. `seller_id` do corpo é IGNORADO como fonte de verdade
  * (só escolhe entre as conexões do próprio cliente, e é validado).
+ *
+ * Plano 036 (f3c6): fora do trial de 7 dias, exige assinatura `authorized` — 402 antes de
+ * chamar o ML.
  */
 export async function POST(req: Request) {
+  const info = await clienteLogadoInfo();
+  if (!info) {
+    return NextResponse.json({ erro: 'Faça login no portal para continuar.' }, { status: 401 });
+  }
+  if (!(await clienteLiberado(info.id, info.criadoEm))) {
+    return NextResponse.json(
+      { erro: 'Seu período de teste acabou. Assine no seu painel para continuar criando anúncios.' },
+      { status: 402 },
+    );
+  }
+
   const body = (await req.json().catch(() => ({}))) as CriarCatalogoBody;
   return criarAnuncioCatalogo(body, async (b) => {
     const pedido = String(b.seller_id ?? '').trim() || undefined;

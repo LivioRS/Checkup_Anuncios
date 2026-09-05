@@ -202,3 +202,21 @@ alter table public.ficha_edits
 -- (`src/lib/lotes/autorizacao.ts`), não no banco, porque o portal só lê/grava por rota.
 alter table public.lotes
   add column if not exists cliente_id bigint references public.clientes(id);
+
+-- Plano 036: gate de status (f3c4) + branding simples (f3c5) + cobrança via Mercado Pago (f3c6).
+alter table public.clientes add column if not exists nome_loja text;
+alter table public.clientes add column if not exists logo_url text;
+
+-- Sem RLS nova (mesmo padrão de 034/035): service_role-only, ownership garantida na rota.
+create table if not exists public.assinaturas (
+  id                 bigserial primary key,
+  cliente_id         bigint not null references public.clientes(id) on delete cascade,
+  mp_preapproval_id  text unique,
+  status             text not null default 'pendente'
+                       check (status in ('pendente','authorized','paused','cancelled')),
+  valor_centavos     bigint,
+  criado_em          timestamptz not null default now(),
+  atualizado_em      timestamptz not null default now()
+);
+create index if not exists assinaturas_cliente_idx on public.assinaturas (cliente_id);
+alter table public.assinaturas enable row level security;

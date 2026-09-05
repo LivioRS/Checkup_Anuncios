@@ -55,6 +55,8 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 033  | Rascunho de anúncio por IA — roteamento GTIN→catálogo, botão "Preencher com IA", ficha buscada no site do fabricante (web). 2 vereditos do LLM Council + decisão do Livio. | P1 | L | 029–032 | DONE (Partes A+B+C+D; branch `feat/033-rascunho-ia`) |
 | 034  | Levar "criar anúncio" (019, 029–033) pro portal do cliente — rotas `/api/portal/anuncios/**` via `comContaCliente`, página `/portal/criar` | P1 | L | 027, 028 | DONE (branch `feat/034-portal-anuncios`, empilhado em 027+028 rebasados — §1, NÃO mergear 028 sem revisão) |
 | 035  | Lote no portal do cliente (kanban Fase 3, f3c3) — rotas `/api/portal/lote/**` via `comContaCliente`, páginas `/portal/lote` e `/portal/lote/[id]` | P1 | M | 026, 028 | DONE (branch `feat/035-lote-portal`, empilhado em 026 rebasado) |
+| 036  | Gate de status (f3c4) + branding simples (f3c5) + cobrança via Mercado Pago — trial 7 dias, assinaturas/preapproval, webhook (kanban Fase 3, f3c4/f3c5/f3c6) | P1 | L | 034, 035 | DONE (branch `feat/036-cobranca-portal`) |
+| 037  | Acabamentos do portal — header de branding compartilhado (`/portal/layout.tsx`) + cancelar assinatura pelo portal (fecha 2 itens de `PENDENCIAS-portal-fase3.md`) | P2 | S | 036 | DONE (branch `feat/037-acabamentos-portal`, empilhado em 036) |
 
 ## Dependency notes
 
@@ -804,3 +806,114 @@ alheio×próprio; processar lote alheio (404, sem chamar o ML) × próprio (toke
 
 **Fora de escopo** (do plano): tela de listagem "meus lotes" (nem o admin tem); RLS por cliente
 de `lotes`/`lote_itens` (ver decisão acima).
+
+## Status do 036 (2026-09-04, DONE — branch `feat/036-cobranca-portal`)
+
+Os três cards de decisão de produto do roteiro da Fase 3, decididos pelo Livio nesta sessão:
+cadastro continua self-service (só faltava o gate de `status`, f3c4); branding = nome/logo sem
+subdomínio (f3c5); cobrança entra agora via **Mercado Pago**, trial de 7 dias, preço em
+constante fácil de trocar (f3c6).
+
+**Gate de `clientes.status`** (f3c4) — `clienteInfoPorAuthUserId` (`src/lib/portal/contaAtiva.ts`)
+passou a filtrar `status = 'ativo'`; um cliente `suspenso`/`cancelado` some das rotas do portal
+por inteiro (não só das de criação), porque `clienteLogadoId`/`resolverContaDoClienteLogado`/
+`conexoesDoClienteLogado` chamam essa função por baixo — sem editar cada rota individualmente.
+
+**Branding** (f3c5) — `clientes.nome_loja`/`logo_url`, `PUT /api/portal/perfil` (session-scoped
+via `supabaseServidor()`, RLS já tinha policy de update desde o 023), form em `/portal/painel`
+(`PerfilForm.tsx`). Fora de escopo (decidido no plano): header compartilhado em toda `/portal/*`
+— v1 mostra só no painel.
+
+**Cobrança** (f3c6) — Mercado Pago, assinaturas (`preapproval`) sem plano associado, checkout
+hospedado (o cliente escolhe o cartão na página do MP, nunca no nosso form):
+- `src/lib/mercadopago/client.ts` — `criarAssinatura`/`buscarAssinaturaMp` (o webhook NUNCA
+  confia só no corpo da notificação — sempre confirma o status atual na API).
+- `src/lib/mercadopago/webhook.ts` — `validarAssinaturaWebhook`, HMAC-SHA256 do manifesto
+  `id:<lower>;request-id:<x-request-id>;ts:<ts>;` com o webhook secret, comparado em tempo
+  constante (reusa `igualSegura` de `src/lib/crypto.ts` — mesmo princípio de segurança do §1,
+  aplicado a dinheiro em vez de token). Pesquisado no site oficial do MP nesta sessão (formato
+  do header, manifesto, tópicos de notificação) — ver fontes no histórico da sessão.
+- `src/lib/portal/assinatura.ts` — `TRIAL_DIAS = 7`, `emTrial`, `clienteLiberado` (trial OU
+  assinatura `authorized`), `assinaturaDoCliente`, `registrarInicioAssinatura`,
+  `atualizarStatusAssinatura`.
+- `POST /api/portal/assinatura/iniciar` (cria o preapproval, devolve `init_point`), `POST
+  /api/webhooks/mercadopago` (**rota pública** — entrou em `ehRotaPublica` do middleware; só
+  processa o tópico `subscription_preapproval`, cujo `data.id` é o `preapproval_id` direto —
+  `subscription_authorized_payment` teria `data.id` de PAGAMENTO, fora de escopo).
+- Paywall nas 3 rotas que criam valor de verdade: `POST /api/portal/anuncios` (catálogo),
+  `POST /api/portal/anuncios/avulso`, `POST /api/portal/lote` — checam `clienteLiberado` ANTES
+  de resolver a conta/chamar o ML; fora do trial e sem assinatura ativa → `402`. As rotas
+  só-leitura/IA do portal (categoria, ficha-por-gtin, rascunho, ia, ficha-web, catalogo/buscar,
+  `/lote/[id]/*`) não são gateadas.
+- UI: `/portal/painel` mostra dias restantes de trial ou status da assinatura + botão "Assinar
+  agora" (`AssinarBotao.tsx`); `/portal/criar` e `/portal/lote` mostram
+  `AssinaturaBloqueio` (mesma tela pras duas) em vez do formulário quando o cliente não está
+  liberado.
+
+**Migração** (aditiva, nullable — entregar ao Livio pro SQL Editor):
+
+```sql
+alter table public.clientes add column if not exists nome_loja text;
+alter table public.clientes add column if not exists logo_url text;
+
+create table if not exists public.assinaturas (
+  id                 bigserial primary key,
+  cliente_id         bigint not null references public.clientes(id) on delete cascade,
+  mp_preapproval_id  text unique,
+  status             text not null default 'pendente'
+                       check (status in ('pendente','authorized','paused','cancelled')),
+  valor_centavos     bigint,
+  criado_em          timestamptz not null default now(),
+  atualizado_em      timestamptz not null default now()
+);
+create index if not exists assinaturas_cliente_idx on public.assinaturas (cliente_id);
+alter table public.assinaturas enable row level security;
+```
+
+**Gate completo (AGENTS.md)**, rodado no worktree com `node_modules` do repo: `npm run build` /
+`lint` / `typecheck` / `verificar` / `test` — verdes, **154/154** (18 novos: 6 em
+`tests/mercadopago-webhook.test.ts` — assinatura válida/segredo errado/data.id adulterado/
+request-id adulterado/header malformado/case-insensitive do data.id; 12 em
+`tests/portal-assinatura.test.ts` — `emTrial`/`clienteLiberado` nos 4 ramos, paywall da rota
+avulso nos 3 ramos, webhook nos 3 ramos incluindo assinatura inválida nunca tocando o banco).
+`tests/portal-anuncios.test.ts`/`tests/portal-lote.test.ts` (034/035) — fixtures ganharam
+`criado_em` recente (cliente dentro do trial), continuam passando sem mudar nenhuma asserção.
+
+**Não testado nesta sessão** (mesma natureza de 022–035): fluxo de checkout de verdade contra o
+Mercado Pago — precisa de `MERCADOPAGO_ACCESS_TOKEN`/`MERCADOPAGO_WEBHOOK_SECRET` reais. O
+Livio precisa criar a aplicação em
+https://www.mercadopago.com.br/developers/panel, configurar o webhook (produção, tópico
+`subscription_preapproval`) e decidir o `MERCADOPAGO_PLANO_VALOR_CENTAVOS` final antes do
+paywall valer pra clientes reais.
+
+**Fora de escopo** (decidido no plano): header/branding compartilhado em toda `/portal/*`;
+cancelamento de assinatura self-service (só o webhook atualiza, via MP); upgrade/downgrade/
+cupom; nota fiscal/recibo; rastreio de cobrança por cobrança (`subscription_authorized_payment`).
+
+## Status do 037 (2026-09-05, DONE — branch `feat/037-acabamentos-portal`, empilhado em 036)
+
+Dois acabamentos que fechavam itens abertos do `PENDENCIAS-portal-fase3.md`:
+
+**Header de branding compartilhado (f3c5, completa)** — `src/app/portal/layout.tsx`: barra fina no
+topo de TODA página `/portal/*` com `clientes.nome_loja`/`logo_url` + nav do portal (Painel /
+Criar anúncio / Lote). Best-effort: sem sessão (`/portal/login`, `/portal/cadastro`) mostra só o
+rótulo neutro "Portal do cliente", sem nav. Antes o branding só aparecia no painel (v1 do 036).
+
+**Cancelar assinatura pelo portal (f3c6, completa)** — `src/lib/mercadopago/client.ts` ganhou
+`cancelarAssinaturaMp` (`PUT /preapproval/{id}` status=cancelled). `POST
+/api/portal/assinatura/cancelar` (sessão obrigatória; confere que a assinatura é do cliente
+logado antes de cancelar) + `CancelarAssinaturaBotao.tsx` no painel, aparece quando a assinatura
+está `authorized` ou `paused`. Também: o webhook (036) agora normaliza `pending` (nome do MP) →
+`pendente` (nome da coluna) explicitamente, em vez de cair no fallback por acaso; e o painel
+mostra um estado próprio pra assinatura `paused` ("o Mercado Pago pausou a cobrança — cartão
+recusado?").
+
+**Gate completo (AGENTS.md)**: `build` / `lint` / `typecheck` / `verificar` / `test` — verdes,
+**157/157** (3 novos: webhook `pending`→`pendente`, `cancelarAssinaturaMp` faz `PUT` com corpo
+certo, `cancelarAssinaturaMp` propaga erro do MP). O `POST /api/portal/assinatura/cancelar` em
+si não tem teste de rota — usa `supabaseServidor()`/`next/headers`, que o repo não mocka (mesma
+limitação de `iniciar`/`perfil`/`conectar`).
+
+**Fora de escopo** (segue no `PENDENCIAS-portal-fase3.md`): rastreio de cobrança por cobrança
+(`subscription_authorized_payment`), limpeza de linhas `pendente` órfãs, e todos os itens que
+dependem de credenciais reais (seção 1 do doc de pendências).
