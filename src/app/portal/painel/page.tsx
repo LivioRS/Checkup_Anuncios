@@ -5,6 +5,7 @@ import { assinaturaDoCliente, emTrial, TRIAL_DIAS } from '@/lib/portal/assinatur
 import { temCobranca } from '@/lib/mercadopago/client';
 import { Selo, Secao } from '@/components/ui';
 import AssinarBotao from './AssinarBotao';
+import CancelarAssinaturaBotao from './CancelarAssinaturaBotao';
 import PerfilForm from './PerfilForm';
 
 export const dynamic = 'force-dynamic';
@@ -97,6 +98,13 @@ export default async function PortalPainelPage({
               <p style={{ margin: 0 }}>
                 <Selo nivel="bom">assinatura ativa</Selo> você pode criar anúncios e rodar lotes
                 sem limite.
+                {temCobranca() ? <CancelarAssinaturaBotao /> : null}
+              </p>
+            ) : assinatura?.status === 'paused' ? (
+              <p style={{ margin: 0 }}>
+                <Selo nivel="atencao">assinatura pausada</Selo> o Mercado Pago pausou a cobrança
+                (cartão recusado?). Regularize no app do Mercado Pago ou assine de novo.
+                {temCobranca() ? <CancelarAssinaturaBotao /> : null}
               </p>
             ) : trial ? (
               <>

@@ -52,8 +52,10 @@ export async function POST(req: Request) {
   try {
     // Nunca confia no que a notificação diz sobre o status — busca o estado ATUAL na API.
     const atual = await buscarAssinaturaMp(dataId);
-    const status = STATUS_VALIDOS.has(atual.status as Assinatura['status'])
-      ? (atual.status as Assinatura['status'])
+    // O MP usa `pending`; a coluna guarda `pendente`. Os outros três são iguais nos dois lados.
+    const bruto = atual.status === 'pending' ? 'pendente' : atual.status;
+    const status = STATUS_VALIDOS.has(bruto as Assinatura['status'])
+      ? (bruto as Assinatura['status'])
       : 'pendente';
     await atualizarStatusAssinatura(dataId, status);
   } catch {

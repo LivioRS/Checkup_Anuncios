@@ -79,6 +79,22 @@ export async function buscarAssinaturaMp(preapprovalId: string): Promise<{
   return { status: corpo?.status ?? 'desconhecido', externalReference: corpo?.external_reference ?? null };
 }
 
+/** Cancela a assinatura no Mercado Pago (plano 037). `PUT /preapproval/{id}` com `status: 'cancelled'`. */
+export async function cancelarAssinaturaMp(preapprovalId: string): Promise<void> {
+  const res = await fetch(`${MP_API}/preapproval/${encodeURIComponent(preapprovalId)}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${env.mercadoPagoAccessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ status: 'cancelled' }),
+  });
+  if (!res.ok) {
+    const texto = await res.text();
+    throw new Error(`Mercado Pago recusou o cancelamento (HTTP ${res.status}): ${texto.slice(0, 400)}`);
+  }
+}
+
 function safeJson(text: string): unknown {
   try {
     return JSON.parse(text);

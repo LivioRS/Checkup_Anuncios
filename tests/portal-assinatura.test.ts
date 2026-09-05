@@ -211,4 +211,56 @@ describe('POST /api/webhooks/mercadopago', () => {
     expect(writes).toHaveLength(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('MP devolve "pending" → grava "pendente" na coluna (plano 037)', async () => {
+    const { client, writes } = makeFakeSupabase({
+      assinaturas: [{ id: 1, cliente_id: 7, mp_preapproval_id: 'PA1', status: 'authorized', valor_centavos: 9700 }],
+    });
+    injetarCliente(() => client as never);
+    vi.stubGlobal('fetch', vi.fn(async () => responseBody({ status: 'pending', external_reference: '7' })));
+
+    const xSignature = await header('PA1', 'r1', 'segredo-webhook');
+    const req = new Request('http://local/api/webhooks/mercadopago?type=subscription_preapproval&data.id=PA1', {
+      method: 'POST',
+      headers: { 'x-signature': xSignature, 'x-request-id': 'r1' },
+      body: JSON.stringify({ type: 'subscription_preapproval', data: { id: 'PA1' } }),
+    });
+    const res = await webhookMp(req);
+    expect(res.status).toBe(200);
+
+    const upd = writes.find((w) => w.table === 'assinaturas' && w.kind === 'update');
+    expect((upd!.payload as Record<string, unknown>).status).toBe('pendente');
+  });
+});
+
+describe('cancelarAssinaturaMp (plano 037)', () => {
+  it('faz PUT /preapproval/{id} com status cancelled', async () => {
+    process.env.MERCADOPAGO_ACCESS_TOKEN = 'token-mp';
+    const { cancelarAssinaturaMp } = await import('../src/lib/mercadopago/client');
+
+    let metodo: string | undefined;
+    let corpo: unknown;
+    let urlChamada = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        urlChamada = String(url);
+        metodo = init?.method;
+        corpo = JSON.parse(String(init?.body));
+        return responseBody({ id: 'PA1', status: 'cancelled' });
+      }),
+    );
+
+    await cancelarAssinaturaMp('PA1');
+    expect(urlChamada).toContain('/preapproval/PA1');
+    expect(metodo).toBe('PUT');
+    expect(corpo).toEqual({ status: 'cancelled' });
+  });
+
+  it('propaga erro quando o MP recusa', async () => {
+    process.env.MERCADOPAGO_ACCESS_TOKEN = 'token-mp';
+    const { cancelarAssinaturaMp } = await import('../src/lib/mercadopago/client');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('nope', { status: 400 })));
+    await expect(cancelarAssinaturaMp('PA1')).rejects.toThrow(/Mercado Pago recusou o cancelamento/);
+  });
 });
