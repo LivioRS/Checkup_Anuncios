@@ -36,7 +36,7 @@ function conexao(over: Record<string, unknown> = {}) {
 
 function baseDeDados(over: Record<string, unknown[]> = {}) {
   return {
-    clientes: [{ id: 7, auth_user_id: 'auth-uid-1', email: 'c@x.com', status: 'ativo' }],
+    clientes: [{ id: 7, auth_user_id: 'auth-uid-1', email: 'c@x.com', status: 'ativo', criado_em: new Date().toISOString() }],
     contas_ml_clientes: [conexao()],
     anuncio_criacoes: [],
     ...over,
