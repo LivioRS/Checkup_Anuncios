@@ -56,6 +56,7 @@ obedeça às STOP conditions e atualize a coluna Status quando terminar.
 | 034  | Levar "criar anúncio" (019, 029–033) pro portal do cliente — rotas `/api/portal/anuncios/**` via `comContaCliente`, página `/portal/criar` | P1 | L | 027, 028 | DONE (branch `feat/034-portal-anuncios`, empilhado em 027+028 rebasados — §1, NÃO mergear 028 sem revisão) |
 | 035  | Lote no portal do cliente (kanban Fase 3, f3c3) — rotas `/api/portal/lote/**` via `comContaCliente`, páginas `/portal/lote` e `/portal/lote/[id]` | P1 | M | 026, 028 | DONE (branch `feat/035-lote-portal`, empilhado em 026 rebasado) |
 | 036  | Gate de status (f3c4) + branding simples (f3c5) + cobrança via Mercado Pago — trial 7 dias, assinaturas/preapproval, webhook (kanban Fase 3, f3c4/f3c5/f3c6) | P1 | L | 034, 035 | DONE (branch `feat/036-cobranca-portal`) |
+| 037  | Acabamentos do portal — header de branding compartilhado (`/portal/layout.tsx`) + cancelar assinatura pelo portal (fecha 2 itens de `PENDENCIAS-portal-fase3.md`) | P2 | S | 036 | DONE (branch `feat/037-acabamentos-portal`, empilhado em 036) |
 
 ## Dependency notes
 
@@ -888,3 +889,31 @@ paywall valer pra clientes reais.
 **Fora de escopo** (decidido no plano): header/branding compartilhado em toda `/portal/*`;
 cancelamento de assinatura self-service (só o webhook atualiza, via MP); upgrade/downgrade/
 cupom; nota fiscal/recibo; rastreio de cobrança por cobrança (`subscription_authorized_payment`).
+
+## Status do 037 (2026-09-05, DONE — branch `feat/037-acabamentos-portal`, empilhado em 036)
+
+Dois acabamentos que fechavam itens abertos do `PENDENCIAS-portal-fase3.md`:
+
+**Header de branding compartilhado (f3c5, completa)** — `src/app/portal/layout.tsx`: barra fina no
+topo de TODA página `/portal/*` com `clientes.nome_loja`/`logo_url` + nav do portal (Painel /
+Criar anúncio / Lote). Best-effort: sem sessão (`/portal/login`, `/portal/cadastro`) mostra só o
+rótulo neutro "Portal do cliente", sem nav. Antes o branding só aparecia no painel (v1 do 036).
+
+**Cancelar assinatura pelo portal (f3c6, completa)** — `src/lib/mercadopago/client.ts` ganhou
+`cancelarAssinaturaMp` (`PUT /preapproval/{id}` status=cancelled). `POST
+/api/portal/assinatura/cancelar` (sessão obrigatória; confere que a assinatura é do cliente
+logado antes de cancelar) + `CancelarAssinaturaBotao.tsx` no painel, aparece quando a assinatura
+está `authorized` ou `paused`. Também: o webhook (036) agora normaliza `pending` (nome do MP) →
+`pendente` (nome da coluna) explicitamente, em vez de cair no fallback por acaso; e o painel
+mostra um estado próprio pra assinatura `paused` ("o Mercado Pago pausou a cobrança — cartão
+recusado?").
+
+**Gate completo (AGENTS.md)**: `build` / `lint` / `typecheck` / `verificar` / `test` — verdes,
+**157/157** (3 novos: webhook `pending`→`pendente`, `cancelarAssinaturaMp` faz `PUT` com corpo
+certo, `cancelarAssinaturaMp` propaga erro do MP). O `POST /api/portal/assinatura/cancelar` em
+si não tem teste de rota — usa `supabaseServidor()`/`next/headers`, que o repo não mocka (mesma
+limitação de `iniciar`/`perfil`/`conectar`).
+
+**Fora de escopo** (segue no `PENDENCIAS-portal-fase3.md`): rastreio de cobrança por cobrança
+(`subscription_authorized_payment`), limpeza de linhas `pendente` órfãs, e todos os itens que
+dependem de credenciais reais (seção 1 do doc de pendências).
